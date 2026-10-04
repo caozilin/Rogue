@@ -21,6 +21,7 @@ var rng := RandomNumberGenerator.new()
 var elapsed := 0.0
 var spawn_credit := 0.0
 var spawn_serial := 0
+var next_wave := Balance.FIRST_WAVE_SECONDS
 var paused := false
 var game_over := false
 var milestone := false
@@ -125,6 +126,11 @@ func start_run() -> void:
 	for id in range(2):
 		players[id].configure_class(selected_classes[id])
 	selecting_classes = false
+	# Start within weapon range, with room to react before enemies make contact.
+	for index in range(Balance.OPENING_ENEMIES):
+		var angle := TAU * float(index) / float(Balance.OPENING_ENEMIES)
+		var at := Vector2(640, 400) + Vector2(cos(angle) * 285.0, sin(angle) * 220.0)
+		_spawn_enemy(at)
 	hud.refresh()
 
 func activate_skill(id: int, movement := Vector2.ZERO) -> bool:
@@ -327,7 +333,6 @@ func _update_spawning(delta: float) -> void:
 	spawn_credit = minf(3.0, spawn_credit + float(tuning.spawn_rate) * delta)
 	while spawn_credit >= 1.0 and enemies.size() < Balance.MAX_ENEMIES:
 		spawn_credit -= 1.0
-		spawn_serial += 1
 		var spawn := Vector2.ZERO
 		for attempt in range(12):
 			match rng.randi_range(0, 3):
@@ -341,10 +346,30 @@ func _update_spawning(delta: float) -> void:
 					safe = false
 			if safe:
 				break
-		var enemy := Enemy.new()
-		enemy.setup(spawn, tuning, elapsed >= 45.0 and spawn_serial % 17 == 0)
-		world.add_child(enemy)
-		enemies.append(enemy)
+		_spawn_enemy(spawn)
+	if elapsed >= next_wave:
+		next_wave += Balance.WAVE_INTERVAL
+		# Two opposing groups create a squeeze, leaving the other two sides open.
+		var horizontal := rng.randf() < 0.5
+		var center := rng.randf_range(280.0, 1000.0) if horizontal else rng.randf_range(240.0, 570.0)
+		for index in range(Balance.wave_size(elapsed)):
+			var offset := (float(index / 2) - float(Balance.wave_size(elapsed)) / 4.0) * 38.0
+			var spawn: Vector2
+			if horizontal:
+				spawn = Vector2(clampf(center + offset, 60.0, 1220.0), 86.0 if index % 2 == 0 else 728.0)
+			else:
+				spawn = Vector2(6.0 if index % 2 == 0 else 1274.0, clampf(center + offset, 140.0, 675.0))
+			_spawn_enemy(spawn)
+
+func _spawn_enemy(at: Vector2) -> void:
+	if enemies.size() >= Balance.MAX_ENEMIES:
+		return
+	spawn_serial += 1
+	var kind := Balance.enemy_kind(elapsed, spawn_serial)
+	var enemy := Enemy.new()
+	enemy.setup(at, Balance.difficulty(elapsed), kind == "elite", kind)
+	world.add_child(enemy)
+	enemies.append(enemy)
 
 func _fire(player) -> void:
 	var target = null
