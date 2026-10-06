@@ -23,6 +23,13 @@ func key(code: int) -> void:
 	event.pressed = true
 	game._unhandled_key_input(event)
 
+func right_click(at: Vector2) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_RIGHT
+	event.pressed = true
+	event.position = game.get_global_transform_with_canvas() * at
+	game._unhandled_input(event)
+
 func enemy(at: Vector2, health := 300.0):
 	var node = game.Enemy.new()
 	node.setup(at, game.Balance.difficulty(0.0), false)
@@ -83,6 +90,50 @@ func run() -> void:
 	raider.shot_cooldown = 1000.0
 	raider.position = Vector2(600, 400)
 	raider.invulnerability = 0.0
+	var wide_target = enemy(Vector2(660, 480))
+	var route_target = enemy(Vector2(830, 400))
+	var outside = enemy(Vector2(700, 500))
+	var single_origin: Vector2 = raider.position
+	var single_hp: float = raider.hp
+	var dash_damage: float = float(raider.stats.damage) * float(raider.skill_stats.damage)
+	key(KEY_ENTER)
+	check(raider.dash_remaining == 0.0, "Raider no longer casts using the old keyboard skill key")
+	game.paused = true
+	right_click(raider.position + Vector2(500, 0))
+	check(raider.dash_remaining == 0.0 and raider.skill_cooldown == 0.0, "right-click dash remains blocked while paused")
+	game.paused = false
+	right_click(raider.position)
+	check(raider.dash_remaining == 0.0 and raider.skill_cooldown == 0.0, "clicking exactly on the Raider does not spend the skill cooldown")
+	raider.last_move_direction = Vector2.LEFT
+	right_click(raider.position + Vector2(500, 0))
+	check(raider.last_move_direction == Vector2.RIGHT and raider.dash_target.x > raider.position.x
+		and gunner.suppression_remaining == 0.0, "right mouse button dashes toward the cursor, ignoring previous movement and the Gunner")
+	check(raider.dash_remaining > 0.0 and raider.return_remaining == 0.0
+		and not game.activate_skill(1, Vector2.LEFT), "default Raider casts only one dash and rejects an immediate second press")
+	raider.take_damage(999.0)
+	step(0.1)
+	check(raider.hp >= single_hp and is_equal_approx(wide_target.hp, 300.0 - dash_damage)
+		and route_target.hp == 300.0 and outside.hp == 300.0,
+		"dash protects the player and damages only the already swept, widened route")
+	check(raider.skill_cooldown == 6.0, "single dash holds the full cooldown until movement ends")
+	step(0.1)
+	check(raider.position.is_equal_approx(single_origin + Vector2(230, 0))
+		and is_equal_approx(wide_target.hp, 300.0 - dash_damage)
+		and is_equal_approx(route_target.hp, 300.0 - dash_damage) and outside.hp == 300.0
+		and game.marked_count(1) == 0, "full dash hits each route enemy once, includes the final segment and creates no return marks")
+	key(KEY_ENTER)
+	check(raider.position.is_equal_approx(single_origin + Vector2(230, 0))
+		and is_equal_approx(raider.skill_cooldown, 5.98), "second press neither returns nor recasts during cooldown")
+	step(0.15)
+	single_hp = raider.hp
+	raider.take_damage(1.0)
+	check(is_equal_approx(raider.hp, single_hp - 1.0), "dash invulnerability expires after its short protection window")
+	clear_combat()
+	# Legacy mode remains available explicitly; it is not a default upgrade.
+	raider.skill_stats.return_enabled = true
+	raider.skill_cooldown = 0.0
+	raider.position = Vector2(600, 400)
+	raider.invulnerability = 0.0
 	var origin: Vector2 = raider.position
 	var target = enemy(Vector2(660, 400))
 	var second = enemy(Vector2(790, 400))
@@ -93,7 +144,7 @@ func run() -> void:
 	check(raider.hp >= health and raider.position.is_equal_approx(origin + Vector2(230, 0))
 		and target.marks.has(1) and second.marks.has(1), "dash is invulnerable and marks the entire swept route")
 	var before: float = target.hp
-	key(KEY_ENTER)
+	right_click(raider.position + Vector2(500, 0))
 	check(raider.position == origin and is_equal_approx(before - target.hp, float(raider.stats.damage) * 3.2)
 		and raider.skill_cooldown == 6.0 and game.marked_count(1) == 0 and raider.invulnerability >= 0.2,
 		"second press returns, detonates once, clears marks and begins cooldown")
@@ -120,6 +171,7 @@ func run() -> void:
 	check(game.simulation_speed() == 1.0, "both Buff choices resume combat")
 	# Two Raiders must not erase or detonate each other's marks.
 	gunner.configure_class(1)
+	gunner.skill_stats.return_enabled = true
 	gunner.return_origin = gunner.position
 	gunner.return_remaining = 1.0
 	target.marks = {0: true, 1: true}

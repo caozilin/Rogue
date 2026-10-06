@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="216" viewBox="0 0 144 216">
+<defs>
+<linearGradient id="stone"><stop stop-color="#75818b"/><stop offset=".35" stop-color="#454f59"/><stop offset=".7" stop-color="#28333c"/><stop offset="1" stop-color="#52626f"/></linearGradient>
+<linearGradient id="metal"><stop stop-color="#151e29"/><stop offset=".27" stop-color="#afbdc9"/><stop offset=".5" stop-color="#5b6e7e"/><stop offset=".78" stop-color="#263c50"/><stop offset="1" stop-color="#8599aa"/></linearGradient>
+<radialGradient id="orb" cx=".35" cy=".3"><stop stop-color="#f0fdff"/><stop offset=".33" stop-color="#abf0ff"/><stop offset=".72" stop-color="#368bce"/><stop offset="1" stop-color="#123c70"/></radialGradient>
+<linearGradient id="top" x2="0" y2="1"><stop stop-color="#83909a"/><stop offset="1" stop-color="#435568"/></linearGradient>
+</defs>
+<path d="m23 181 49-19 49 19v18l-49 16-49-16z" fill="#243039"/>
+<path d="m23 181 49 16 49-16-49-19z" fill="url(#top)" stroke="#82909b" stroke-width="1"/>
+<path d="m28 189 44 14 44-14m-44 14v10" fill="none" stroke="#4d5c66" stroke-width="2"/>
+<path d="m44 170 28-10 28 10v20l-28 10-28-10z" fill="url(#metal)"/>
+<path d="m49 82 23-9 23 9v91l-23 10-23-10z" fill="url(#stone)" stroke="#7b8995" stroke-width="1"/>
+<path d="M72 85v95M50 89l22 9 22-9m-43 36 21 9 22-9m-43 33 21 9 22-9" fill="none" stroke="#1b2d3e" stroke-width="2"/>
+<path d="M61 97v27m0 16v18m22-60v25m0 16v19" stroke="#8cdfff" stroke-width="2" opacity=".8"/>
+<path d="m34 72 38-13 38 13v15l-38 12-38-12z" fill="url(#metal)" stroke="#819aaf"/>
+<ellipse cx="72" cy="72" rx="38" ry="13" fill="url(#top)" stroke="#94abbd"/>
+<path d="M37 68 33 46l7-11 7 30m60 3 4-22-7-11-7 30M65 58V25l7-11 7 11v33" fill="url(#metal)" stroke="#9badb8" stroke-width="1.5"/>
+<ellipse cx="72" cy="65" rx="19" ry="9" fill="#182a3d"/>
+<circle cx="72" cy="50" r="21" fill="url(#orb)" stroke="#b9ecfa" stroke-width="1.5"/>
+<ellipse cx="72" cy="50" rx="25" ry="8" fill="none" stroke="#769fbc" stroke-width="2" transform="rotate(-24 72 50)"/>
+<path d="m62 39 10 7-7 9 14 6m-41-14 13 8m42 0 12-8M71 24l-3 8" fill="none" stroke="#e2faff" stroke-width="2" stroke-linecap="round"/>
+<path d="m49 176 23 8 23-8m-63 8 7 2m63-2 8-3" stroke="#a1b2bb" stroke-width="1.5" opacity=".75"/>
+</svg>

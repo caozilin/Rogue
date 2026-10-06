@@ -9,6 +9,8 @@ var game
 var role_buttons: Array = []
 var details: Array[Label] = []
 var ready_buttons: Array[Button] = []
+var portraits: Array[TextureRect] = []
+var mode_buttons: Array[Button] = []
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -17,11 +19,19 @@ func _ready() -> void:
 	shade.color = Color(0.025, 0.04, 0.07, 1.0)
 	add_child(shade)
 	var title := _label(self, "双人幸存者 · 选择职业", 32)
-	title.position = Vector2(240, 65)
+	title.position = Vector2(240, 22)
 	title.size = Vector2(800, 50)
 	var hint := _label(self, "各自任选一个职业，也可以选择相同职业 · 双方准备后开战", 17)
-	hint.position = Vector2(190, 123)
+	hint.position = Vector2(190, 76)
 	hint.size = Vector2(900, 35)
+	for mode in range(2):
+		var button := Button.new()
+		button.position = Vector2(315 + mode * 330, 120)
+		button.size = Vector2(310, 46)
+		button.focus_mode = Control.FOCUS_NONE
+		button.pressed.connect(func(): game.select_mode(mode == 1))
+		add_child(button)
+		mode_buttons.append(button)
 	for id in range(2):
 		var panel := PanelContainer.new()
 		panel.position = Vector2(90 + id * 580, 185)
@@ -31,17 +41,18 @@ func _ready() -> void:
 		var box := VBoxContainer.new()
 		box.add_theme_constant_override("separation", 13)
 		panel.add_child(box)
-		var heading := _label(box, "P%d  /  %s  /  技能 %s" % [id + 1,
+		var heading := _label(box, "P%d  /  %s  /  准备 %s" % [id + 1,
 			"WASD" if id == 0 else "方向键", "空格" if id == 0 else "回车"], 23)
 		heading.modulate = Balance.PLAYER_COLORS[id]
 		var portrait := TextureRect.new()
-		portrait.texture = Art.sprite("hero")
-		portrait.custom_minimum_size = Vector2(0, 78)
+		portrait.texture = Art.character(game.selected_classes[id])
+		portrait.custom_minimum_size = Vector2(0, 96)
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		box.add_child(portrait)
+		portraits.append(portrait)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 12)
 		box.add_child(row)
@@ -56,7 +67,7 @@ func _ready() -> void:
 			buttons.append(button)
 		role_buttons.append(buttons)
 		var detail := _label(box, "", 16)
-		detail.custom_minimum_size.y = 105
+		detail.custom_minimum_size.y = 140
 		details.append(detail)
 		var ready := Button.new()
 		ready.custom_minimum_size.y = 48
@@ -71,7 +82,7 @@ func _ready() -> void:
 	start.focus_mode = Control.FOCUS_NONE
 	start.pressed.connect(func(): game.start_run())
 	add_child(start)
-	var footer := _label(self, "自动攻击 · 战斗中只需移动 + 一个技能键\n共享经验，独立 Build · 靠近倒地队友 3 秒复活", 16)
+	var footer := _label(self, "技能统一：P1 Q / E / R / 空格；P2 右键 / 1 / 2 / 3（支持小键盘）\n法师：火球 / 冰霜 / 附身 / 雷楞塔；战士：突进 / 战吼 / 巨化 / 救援", 16)
 	footer.position = Vector2(190, 739)
 	footer.size = Vector2(900, 50)
 	refresh()
@@ -101,7 +112,14 @@ func refresh() -> void:
 	visible = game.selecting_classes
 	if not visible:
 		return
+	for mode in range(2):
+		var selected: bool = game.breakthrough_mode == (mode == 1)
+		mode_buttons[mode].text = ("✓ " if selected else "") + ("普通模式 · 从零成长" if mode == 0 else "破线模式 · 满强化三连 Boss")
+		mode_buttons[mode].add_theme_stylebox_override("normal", _style(
+			Color("25445a") if selected else Color("182b3f"), Color("ffe08a") if selected else Color("35495d")))
+		mode_buttons[mode].tooltip_text = "所有大小技能与全局 Buff 点满；直接挑战武王 → 炮皇 → 奶龙（含奶蛙第二条命），血量按职业组合调整。" if mode == 1 else "从基础属性开局，击杀升级后选择强化，再挑战终局 Boss。"
 	for id in range(2):
+		portraits[id].texture = Art.character(game.selected_classes[id])
 		for role in range(2):
 			var selected: bool = game.selected_classes[id] == role
 			var key := role + (1 if id == 0 else 7)
@@ -110,5 +128,18 @@ func refresh() -> void:
 				Color("25445a") if selected else Color("182b3f"),
 				Balance.PLAYER_COLORS[id] if selected else Color("35495d")))
 		details[id].text = Classes.description(game.selected_classes[id])
+		if id == 0 and game.selected_classes[id] == Classes.RAIDER:
+			details[id].text = details[id].text.replace("右键朝鼠标突进 230", "[Q] 优先最高等级索敌突进 230").replace("[1]", "[E]").replace("[2]", "[R]").replace("[3]", "[空格]")
+		if id == 1 and game.selected_classes[id] == Classes.MAGE:
+			details[id].text = details[id].text.replace("[Q]", "[右键]").replace("[E]", "[1]").replace("[R]", "[2]").replace("[空格]", "[3]")
+		if game.breakthrough_mode:
+			details[id].text = _full_build_description(game.selected_classes[id], id)
 		ready_buttons[id].text = "%s [%s]" % ["已准备 · 再按取消" if game.class_ready[id] else "准备",
 			"空格" if id == 0 else "回车"]
+
+func _full_build_description(role: int, id: int) -> String:
+	var keys := ["Q", "E", "R", "空格"] if id == 0 else ["右键", "1", "2", "3"]
+	var shared := "全局满级：伤害 / 攻速 / 生命 ×2.5，四发贯穿弹"
+	if role == Classes.MAGE:
+		return "[%s] 四重火球 · 范围 ×2.5，三项大强化全开\n[%s] 冰霜 · 范围 ×2.5，频率 ×4，三项大强化全开\n[%s] 附身 · 伤害 +35%%，范围与冷却恢复 +25%%\n[%s] 雷楞塔 · 高频增幅，连锁 / 潮汐 / 裁决全开\n所有小强化 Lv.3 · 九项大技能全部解锁\n%s" % [keys[0], keys[1], keys[2], keys[3], shared]
+	return "[%s] 突进 · 宽幅长驱，二段 / 炎刃 / 破空斩全开\n[%s] 木桩嘲讽 16 秒，生命为自身上限 250%%\n[%s] 巨化 ×4 / 5.5秒，反甲 / 回流 / 炮弹 / 震地\n[%s] 救援 · 庇护 / 并肩反攻，被动护盾上限 45%%\n所有小强化 Lv.3 · 十项大技能全部解锁\n%s" % [keys[0], keys[1], keys[2], keys[3], shared]

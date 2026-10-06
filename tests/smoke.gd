@@ -18,12 +18,6 @@ func check(condition: bool, message: String) -> void:
 		failures += 1
 		push_error(message)
 
-func key(code: int) -> void:
-	var event := InputEventKey.new()
-	event.physical_keycode = code
-	event.pressed = true
-	game._unhandled_key_input(event)
-
 func option(player, id: String) -> int:
 	for i in range(player.offers.size()):
 		if player.offers[i].id == id:
@@ -49,21 +43,21 @@ func run() -> void:
 	var base1: Dictionary = p1.stats.duplicate(true)
 	var base2: Dictionary = p2.stats.duplicate(true)
 	var other_skill: Dictionary = p2.skill_stats.duplicate(true)
-	key(KEY_1 + option(p1, "overclock"))
+	game.hud.choice_buttons[0][option(p1, "overclock")].pressed.emit()
 	check(is_equal_approx(p1.skill_stats.attack_rate, 2.2 * 1.18) and p2.skill_stats == other_skill and p1.stats == base1
 		and not p1.choosing and game.hud.choice_panels[0].visible and game.simulation_speed() == 0,
-		"P1 keyboard skill choice changes only P1 skill and keeps the waiting window")
+		"P1 mouse choice changes only P1 skill and keeps the waiting window")
 	game.team_offers[0] = Upgrades.CATALOG[0].duplicate()
-	key(KEY_4)
-	check(is_equal_approx(p1.stats.damage, float(base1.damage) * 1.45) and is_equal_approx(p2.stats.damage, float(base2.damage) * 1.45)
+	game.hud.team_buttons[0].pressed.emit()
+	check(is_equal_approx(p1.stats.damage, float(base1.damage) * 1.5) and is_equal_approx(p2.stats.damage, float(base2.damage) * 1.5)
 		and p1.ranks == p2.ranks and game.team_pending_upgrades == 0 and game.simulation_speed() == 0,
 		"one shared Buff affects both players, but combat waits for P2")
 	var clock: float = game.elapsed
 	game.simulate(1.0, [Vector2.RIGHT, Vector2.LEFT])
-	key(KEY_7 + option(p2, "rupture"))
+	game.hud.choice_buttons[1][option(p2, "rupture")].pressed.emit()
 	check(game.elapsed == clock and is_equal_approx(p2.skill_stats.damage, 3.2 * 1.35)
 		and game.simulation_speed() == 1 and not game.hud.team_panel.visible,
-		"P2 keyboard choice completes all three selections and resumes combat")
+		"P2 mouse choice completes all three selections and resumes combat")
 	game.activate_skill(0)
 	check(is_equal_approx(p1.attack_interval(), float(p1.stats.interval) / (2.2 * 1.18))
 		and is_equal_approx(p1.skill_stats.extra_damage, 0.75 * 1.25), "Gunner attack uses upgraded suppression modifiers")
@@ -74,8 +68,7 @@ func run() -> void:
 	enemy.max_hp = 200
 	game.world.add_child(enemy)
 	game.enemies.append(enemy)
-	game._mark_dash(1, p2.position, p2.position + Vector2(100, 0))
-	game.activate_skill(1)
+	game._damage_dash(1, p2.position, p2.position + Vector2(100, 0))
 	check(is_equal_approx(200.0 - enemy.hp, float(p2.stats.damage) * 3.2 * 1.35), "Raider detonation uses both shared damage and individual skill enhancement")
 	game.add_shared_xp(game.Balance.xp_required(game.team_level) + game.Balance.xp_required(game.team_level + 1))
 	game.paused = true
@@ -92,7 +85,7 @@ func run() -> void:
 	p2.downed = true
 	p2.hp = 0
 	game.add_shared_xp(game.Balance.xp_required(game.team_level))
-	game.team_offers[0] = Upgrades.CATALOG[6].duplicate()
+	game.team_offers[0] = Upgrades.definition("vitality").duplicate()
 	game.choose_team_upgrade(0)
 	game.choose_upgrade(0, 0)
 	game.choose_upgrade(1, 0)

@@ -1,0 +1,36 @@
+# 写实 2.5D 素材
+
+新增 `milk-poses.png`（1536×1024，真实 alpha）：根据用户六张角色参考使用内置 image_gen 生成，3 列 × 2 行，上排奶龙，下排直立黄色、绿眼、奶白大肚的奶蛙。三列分别是待机、吐舌、捧腹大笑。吐舌用于奶油吐息/舌鞭，大笑用于星弹/泡泡/轰炸，分身使用第二排。它是适配当前 2D 项目的预渲染精灵，不是官方可编辑 3D 模型；公开模型下载接口要求登录，未下载或绕过该限制。`Art.milk_character()` 负责切格，换图请保持 3×2 布局。早期 `nailoong-boss.png` / `milkfrog-boss.png` 仅作缺少图集时回退，正常游戏统一使用用户参考版本。
+
+由内置 image_gen 生成并保存到项目，无运行时网络依赖。旧素材保留作回退，不参与正常场景绘制。
+
+- `realistic-atlas.png`：4 列 × 3 行透明图集。依次为法师、战士、普通怪、精英、散射怪、环射怪、扫射怪、炮击怪、孢冠统领、荆棘祭司、终局骑士、经验晶体。
+- `stone-arena.png`：石质竞技场，中央保留可读的空旷战斗区。
+- `lightning_tower.svg`：代码绘制的斜俯视石金属雷楞塔，顶部能量球、金属环与冷色符文。`assets/icons/lightning_tower.svg` 为其独立技能图标；电击光束、闪光、归属与寿命标签由 `scripts/lightning_tower.gd` 按模拟时钟绘制。
+- 雷塔升级图标为 `tower_rate / tower_core / tower_chain / tower_tide / tower_judgment.svg`，分别用线圈、晶核、分叉电弧、雷环和雷枪区分。`scripts/lightning_effects.gd` 绘制蓝白连锁、雷纹落柱、金紫天空裁决及紫蓝潮汐；`lightning_wave.gdshader` 绘制编织双层雷墙与光晕。32 个复用雷环绘制节点、最多 128 条短暂视觉反馈和 96 个头顶标记；视觉预算不截断伤害判定。全部使用显式模拟时钟，已经释放的预警和雷环独立于召唤塔寿命。
+- `scripts/art.gd` 按等大单元切分角色；线性过滤、柔和脚下投影与纵向遮挡营造深度。
+- 火球与冰霜改为实时 shader 和固定上限的视觉池；着色器不使用自动推进的 TIME，改用 `Game.elapsed`，避免暂停时继续动画。冰霜范围轮廓与战斗半径一致。
+- 原始图集在检查中发现武器跨格，随后使用内置 image_gen 编辑修复；缩小人物以保留透明间距，终局骑士改为贴身竖直持剑。当前项目使用修复后的图集，原始生成文件保留。
+- 王冠与竖直长剑使用格子上方的透明间距，`Art.realistic()` 对对应格子调整裁切边界，避免截断剑尖和王冠、避免上排射手带入其他格子的图像。
+- 所有单位通过 `scripts/unit_motion.gd` 和 `assets/effects/unit_motion.gdshader` 对现有图集作网格变形，实现交替迈步、摆臂、衣袍晃动与飞行怪扇翅。网格按贴图与尺寸缓存，动作时钟由模拟推进，停止、携带与附身时收步，暂停时冻结。
+- 冰霜地面增加冰面反光、分层寒雾和按伤害频率推进的脉冲。“庇护寒域”通过 `scripts/frost_ward_visual.gd` 与 `assets/effects/frost_ward.gdshader` 绘制半透明冰晶穹顶、曲面网格、经线、护盾血量条及友方庇护标记；挡弹涟漪与碎裂效果受模拟时钟控制，反馈数量上限为 24。
+
+验证：Godot 最小启动、真实 OpenGL 截图、法术暂停与消失时的视觉池清理；未运行完整机制回归。
+
+## 图集生成提示词（内置工具）
+
+```text
+Use case: production game sprite atlas for a Godot 2.5D dark fantasy co-op roguelike. Generate ONE transparent PNG atlas, landscape 4 columns by 3 rows, exact equal rectangular cells (prefer 2048x1536, each cell square). Exactly twelve separate isolated full-body game sprites, centered individually in each cell with generous transparent padding; no cell borders, no labels, no background, no floor or ground shadow. Camera: elevated three-quarter 55-degree view, characters standing facing slightly toward camera, realistic 3D rendered miniatures, physically based detailed materials and subdued dark fantasy color palette, realistic proportions, smooth anti-aliased outlines, strong readable silhouettes, NOT pixel art, NOT chibi, NOT cartoon, NOT flat vector illustration. Lighting soft pale light from upper left, dark contact shading on bodies, no opaque exterior drop shadows. Each entire subject INCLUDING its equipment must fit inside middle 75% of its cell without crossing the cell edges. Row1 col1: human battle mage with dark violet layered cloth robes, hood and realistic face, silver trims, wooden staff with luminous pale cyan crystal. Row1 col2: human warrior in polished weathered steel plate armor, wine red cape, realistic helmet, sword and kite shield. Row1 col3: hostile stocky organic mushroom creature, weathered dark russet fleshy cap, sinewy gray fungal stalk legs, dim amber eyes. Row1 col4: elite horned fungal demon, dark purple hide, bony ivory horns, armor-like bark, two pale eyes. Row2 col1: fan-shooting monster, coral fungus with three front-facing spore tubes. Row2 col2: ring-shooting monster, heavy fungal body with circular wreath of eight pale violet tubular pods. Row2 col3: sweeping shooter, large mothlike fungal creature with leathery dark blue wings and one jade glowing abdomen. Row2 col4: mortar creature, heavy broad ochre fungal shell with one upturned organic artillery tube. Row3 col1: large crowned spore king boss, red and bronze mushroom demon with realistic bone crown. Row3 col2: thorn witch boss, long muted green and plum robe, realistic skeletal thorn crown, wooden branch staff. Row3 col3: enormous dark knight boss with blackened steel armor, bronze trim, burgundy cape, greatsword, rigid realistic metal helmet. Row3 col4: small faceted emerald mana crystal with physically based refraction and glints. All twelve sprites are coherent realistic high-quality game assets, lighting and perspective match. True alpha transparency around every subject. No text, watermark, UI, tile lines, checkerboard, landscape, extra characters or visible platform.
+```
+
+## 场景生成提示词（内置工具）
+
+```text
+Use case: production environment background texture for a realistic 2.5D dark fantasy top-down co-op action game. Generate ONE wide landscape image, approximately 2:1 aspect ratio, ideally 2048x1024. A large empty rectangular ancient stone courtyard arena, seen from elevated camera 55 degrees down, but the playable floor fills the whole rectangular image without obvious trapezoid outer border. Realistic rendered detailed worn limestone and charcoal gray slabs, irregular fine cracks, subtle damp specular reflections, moss only near far outer perimeter, very low contrast details, cool smoky blue-gray shadows. Thin ruined stone parapets at the far top edge, small low broken columns ONLY at corners and far periphery, carved faint circular ritual engraving around floor center. Soft cinematic light from upper left, two small warm orange brazier lights near left and right edges, distant bluish atmospheric fog along top edge. Most central 85% is clear unobstructed WALKABLE FLAT STONE FLOOR, uniform readable medium dark gray values suitable for brightly lit spell effects and tiny realistic game characters. No characters, monsters, weapons, loot, flame explosions, HUD, lettering, watermark, grid overlay, camera tilt horizon, foreground objects covering the arena, bright center hotspot, or cartoon/pixel style. Material realism, physically based stone texture, subtle ambient occlusion and oblique stonework perspective suggest depth, highly coherent architectural texture.
+```
+
+## 图集边缘修复提示词（内置工具编辑）
+
+```text
+Edit this production transparent 4x3 sprite atlas. Preserve the EXACT twelve characters, dark realistic 3D-rendered materials, camera viewpoint, colors, and strict 4-column 3-row order. Critical correction: each sprite INCLUDING all weapons, crowns, staff and wings must now fit inside the centered middle 74% of its own equal cell with generous EMPTY alpha gutters, so no pixels belonging to another character appear when a cell is cut out. The bottom row col3 dark knight's giant sword currently intrudes into bottom row col2 thorn witch's region: change his pose to hold the entire greatsword near-vertical UPWARD immediately beside his own body, and center the knight and sword as a single subject completely within his own cell. The thorn witch must be cleanly isolated, with only her own complete branch staff, no stray knight sword or equipment. All top-row warrior boots must fit fully inside row1 col2. Reduce all twelve subjects a little uniformly as needed to guarantee true transparent gaps on every cell boundary. Mage, warrior, mushrooms, spore shooters, moth, artillery creature, crowned boss, thorn witch, dark knight, emerald crystal remain recognizably the same. Exactly 4 by 3 grid, equal square cells in a 4:3 landscape canvas. True transparent alpha, no background, no tile lines, no text, no platform, no exterior shadows, no checkerboard. Do not add sprites or change the order. Use smooth realistic game rendering, never pixel art.
+```

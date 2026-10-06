@@ -2,6 +2,7 @@ extends Node2D
 ## Swept collision is handled by Game: fast projectiles cannot tunnel through enemies.
 
 var owner_id := 0
+var damage_source := "auto"
 var velocity := Vector2.ZERO
 var damage := 14.0
 var remaining_distance := 480.0
@@ -9,6 +10,9 @@ var hits_left := 1
 var hit_ids: Dictionary = {}
 var critical := false
 var expired := false
+
+func _ready() -> void:
+	z_index = 2
 
 func _draw() -> void:
 	var color: Color = preload("res://scripts/balance.gd").PLAYER_COLORS[owner_id]

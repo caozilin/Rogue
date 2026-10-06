@@ -1,11 +1,9 @@
 extends SceneTree
-## Verify growth, useful secondary effects and safe limits independently of combat RNG.
-
+## Focused three-tier Buff and percentage-healing check; no long combat simulation.
 const Player = preload("res://scripts/player.gd")
-const Balance = preload("res://scripts/balance.gd")
 const Upgrades = preload("res://scripts/upgrades.gd")
+const SkillUpgrades = preload("res://scripts/skill_upgrades.gd")
 const MainScene = preload("res://scenes/main.tscn")
-
 var checks := 0
 var failures := 0
 
@@ -18,86 +16,101 @@ func check(condition: bool, message: String) -> void:
 		print("PASS: ", message)
 	else:
 		failures += 1
-		push_error("TEST FAILED: " + message)
+		push_error(message)
 
 func run() -> void:
-	for level in [1, 5, 10, 20]:
-		var previous := int(12.0 + 8.0 * pow(float(level - 1), 1.12))
-		check(Balance.xp_required(level) >= previous * 3, "XP costs substantially higher at level %d" % level)
-	var primary := {"damage": "damage", "haste": "interval", "multishot": "projectile_power",
-		"range": "range", "pierce": "pierce_power", "crit": "crit",
-		"vitality": "max_hp", "speed": "speed", "regen": "regen"}
-	for id in primary:
-		var player := Player.new()
-		var key: String = primary[id]
-		var base: float = float(player.stats[key])
-		Upgrades.apply(player, id)
-		var first: float = float(player.stats[key])
-		Upgrades.apply(player, id)
-		var second: float = float(player.stats[key])
-		check(not is_equal_approx(first, base) and is_equal_approx(first / base, second / first),
-			"%s repeats by multiplication rather than fixed addition" % id)
-		player.free()
-	var player := Player.new()
-	var shots: Array[int] = [1]
-	for index in range(5):
-		Upgrades.apply(player, "multishot")
-		shots.append(player.stats.projectiles)
-	check(shots == [1, 2, 3, 5, 8, 12], "projectile count follows exponential capacity with rounding")
-	player.free()
-	player = Player.new()
-	var piercing: Array[int] = [0]
-	for index in range(4):
-		Upgrades.apply(player, "pierce")
-		piercing.append(player.stats.pierce)
-	check(piercing == [0, 1, 2, 4, 8], "zero-start penetration grows via exponential hit capacity")
-	player.free()
-	player = Player.new()
-	Upgrades.apply(player, "range")
-	check(player.stats.projectile_speed > 570 and player.stats.damage > 14 and player.stats.range > 480,
-		"range also improves projectile speed and damage")
-	Upgrades.apply(player, "speed")
-	check(player.stats.interval < 0.62 and player.stats.speed > 225, "movement upgrade also improves attack rate")
-	var regen: float = player.stats.regen
-	player.hp = 10
-	Upgrades.apply(player, "vitality")
-	check(player.stats.max_hp > 100 and player.hp > 10, "vitality multiplies HP and immediately heals")
-	var health: float = player.hp
-	Upgrades.apply(player, "regen")
-	check(player.hp > health and player.stats.regen > regen, "regeneration improves sustain and immediately heals")
-	for index in range(30):
+	var ranged := Player.new()
+	var melee := Player.new()
+	ranged.configure_class(0)
+	melee.configure_class(1)
+	check(is_equal_approx(melee.stats.speed, 196.0) and is_equal_approx(ranged.stats.speed, 156.8)
+		and ranged.stats.crit == 0.0 and melee.stats.crit == 0.0 and ranged.stats.regen == 0.02,
+		"starting speeds are 196 and 156.8, crit is zero and regeneration is 2 percent")
+	var expected := [
+		{"damage": 21.0, "interval": 0.62 / 1.5, "projectiles": 2, "pierce": 1, "speed": 156.8, "max_hp": 150.0, "regen": 0.03},
+		{"damage": 28.0, "interval": 0.31, "projectiles": 3, "pierce": 2, "speed": 156.8, "max_hp": 200.0, "regen": 0.04},
+		{"damage": 35.0, "interval": 0.248, "projectiles": 4, "pierce": 3, "speed": 156.8, "max_hp": 250.0, "regen": 0.05}
+	]
+	for tier in range(3):
+		ranged.hp = 1.0
 		for offer in Upgrades.CATALOG:
-			if Upgrades.available(offer.id, player.stats):
-				Upgrades.apply(player, offer.id)
-	check(player.stats.interval >= Balance.UPGRADE_LIMITS.interval and player.stats.projectiles <= 12
-		and player.stats.pierce <= 8 and player.stats.crit <= 1.0 and player.stats.speed <= 420
-		and player.stats.range <= 1200 and player.stats.regen <= 15,
-		"exponential growth respects combat and performance limits")
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 77
-	var offers := Upgrades.roll(rng, player.stats)
-	var ids: Array[String] = []
-	for offer in offers:
-		ids.append(offer.id)
-	check(offers.size() == 3 and ids.has("damage") and ids.has("crit") and ids.has("vitality"),
-		"capped utilities leave three useful repeatable choices")
-	var critical_damage: float = player.stats.crit_multiplier
-	Upgrades.apply(player, "crit")
-	check(player.stats.crit == 1.0 and player.stats.crit_multiplier > critical_damage,
-		"critical damage keeps growing after chance reaches 100 percent")
-	player.free()
+			Upgrades.apply(ranged, offer.id)
+		var valid := is_equal_approx(ranged.hp, float(expected[tier].max_hp))
+		for attribute in expected[tier]:
+			valid = valid and is_equal_approx(float(ranged.stats[attribute]), float(expected[tier][attribute]))
+		check(valid, "all five Buffs reach exact total tier %d values; base movement is unchanged" % (tier + 1))
+	var before: Dictionary = ranged.stats.duplicate(true)
+	var blocked := true
+	for offer in Upgrades.CATALOG:
+		blocked = blocked and not Upgrades.apply(ranged, offer.id) and ranged.ranks[offer.id] == 3
+	check(blocked and ranged.stats == before and Upgrades.roll(ranged.rng, ranged.ranks).is_empty(),
+		"fourth selections are blocked and maxed Buffs leave the pool")
+	ranged.hp = 100.0
+	ranged.advance(1.0, Vector2.ZERO)
+	check(is_equal_approx(ranged.hp, 112.5), "tier-three regeneration heals 5 percent of 250 HP each second")
+	melee.hp = 10.0
+	Upgrades.apply(melee, "vitality")
+	var interval: float = melee.stats.interval
+	var speed_blocked := not Upgrades.apply(melee, "speed")
+	melee.hp = 20.0
+	melee.advance(1.0, Vector2.ZERO)
+	check(is_equal_approx(melee.hp, 24.95) and melee.stats.interval == interval and speed_blocked,
+		"merged vitality heals 3 percent of 165 HP; removed speed Buff cannot apply")
+	melee.downed = true
+	melee.hp = 0.0
+	Upgrades.apply(melee, "vitality")
+	melee.advance(1.0, Vector2.ZERO)
+	check(melee.downed and melee.hp == 0.0, "vitality and percent regeneration do not revive a downed player")
+	var skills_capped := true
+	for role in range(2):
+		var player := Player.new()
+		player.configure_class(role)
+		for offer in SkillUpgrades.CATALOG[role]:
+			for repeat in range(3):
+				skills_capped = skills_capped and SkillUpgrades.apply(player, offer.id)
+			skills_capped = skills_capped and not SkillUpgrades.apply(player, offer.id)
+		skills_capped = skills_capped and SkillUpgrades.roll(player.rng, role, player.skill_ranks).is_empty()
+		player.free()
+	check(skills_capped, "each personal skill entry also caps at three selections")
+	var removed := true
+	for offer in Upgrades.CATALOG:
+		removed = removed and offer.id not in ["range", "crit", "regen", "speed"]
+	check(removed and Upgrades.CATALOG.size() == 5, "range, crit, separate regeneration and speed upgrades removed")
 	var game = MainScene.instantiate()
 	root.add_child(game)
 	game.set_physics_process(false)
 	game.start_run()
-	Upgrades.apply(game.players[0], "range")
-	var enemy = game.Enemy.new()
-	enemy.setup(game.players[0].position + Vector2(200, 0), Balance.difficulty(0), false)
-	game.world.add_child(enemy)
-	game.enemies.append(enemy)
-	game._fire(game.players[0])
-	check(not game.projectiles.is_empty() and is_equal_approx(game.projectiles[0].velocity.length(), game.players[0].stats.projectile_speed),
-		"projectile speed upgrade is used by actual combat")
+	for node in game.enemies:
+		node.free()
+	game.enemies.clear()
+	for repeat in range(3):
+		Upgrades.apply(game.players[0], "pierce")
+	for index in range(5):
+		var enemy = game.Enemy.new()
+		enemy.setup(game.players[0].position + Vector2(50 * (index + 1), 0), game.Balance.difficulty(0.0), false)
+		enemy.hp = 10.0
+		enemy.max_hp = 10.0
+		game.world.add_child(enemy)
+		game.enemies.append(enemy)
+	game._spawn_bullet(game.players[0], Vector2.RIGHT)
+	game._update_projectiles(0.5)
+	check(game.players[0].kills == 4 and game.enemies.size() == 1 and game.projectiles.is_empty(),
+		"one tier-three projectile hits four monsters total and leaves the fifth unharmed")
+	for player in game.players:
+		for offer in Upgrades.CATALOG:
+			player.ranks[offer.id] = 2 if offer.id == "damage" else 3
+		for offer in SkillUpgrades.CATALOG[player.role]:
+			player.skill_ranks[offer.id] = 3
+	game.add_shared_xp(game.Balance.xp_required(1))
+	check(game.team_offers.size() == 1 and game.hud.team_buttons[0].visible and not game.hud.team_buttons[1].visible
+		and game.players[0].pending_upgrades == 0 and game.players[1].pending_upgrades == 0
+		and not game.choose_team_upgrade(1), "one remaining Buff displays safely while capped skill windows skip choices")
+	game.choose_team_upgrade(0)
+	game.add_shared_xp(game.Balance.xp_required(game.team_level))
+	check(game.simulation_speed() == 1.0 and not game.has_pending_upgrades() and not game.hud.team_panel.visible,
+		"future levels do not freeze or open empty panels when all entries are maxed")
 	game.free()
-	print("BALANCE RESULT: %d checks, %d failures" % [checks, failures])
+	ranged.free()
+	melee.free()
+	print("TIERS RESULT: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
