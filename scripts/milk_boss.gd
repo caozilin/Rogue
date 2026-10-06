@@ -39,6 +39,7 @@ var clones_summoned := false
 var expression := "idle"
 var form := 1
 var second_life_hp := SECOND_HP
+var second_life_damage := 165.0
 var rebirth_remaining := 0.0
 var visual_system: Node2D
 var leap_origin := Vector2.ZERO
@@ -227,7 +228,7 @@ func advance(delta: float, target: Node2D) -> void:
 			form = 2
 			hp = second_life_hp
 			max_hp = hp
-			damage = 165.0
+			damage = second_life_damage
 			speed = 355.0
 			phase = 1
 			enraged = false

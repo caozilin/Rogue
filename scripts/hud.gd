@@ -23,6 +23,7 @@ var choice_waiting: Array[Label] = []
 var offer_signatures := ["", ""]
 var team_panel: PanelContainer
 var team_title: Label
+var team_instructions: Label
 var team_buttons: Array[Button] = []
 var team_waiting: Label
 var team_signature := ""
@@ -286,7 +287,7 @@ func _create_team_choices(root: Control) -> void:
 	team_panel.add_child(box)
 	team_title = _box_label(box, "", 24)
 	team_title.modulate = Color("87f5b4")
-	_box_label(box, "全队共享 · 鼠标左键任选一项，两人同时获得 · 三个窗口全部选完继续", 15)
+	team_instructions = _box_label(box, "全队共享 · 鼠标左键任选一项，两人同时获得 · 三个窗口全部选完继续", 15)
 	team_waiting = _box_label(box, "全队 Buff 已选完 · 等待下方技能强化", 20)
 	team_waiting.custom_minimum_size.y = 120
 	team_waiting.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -347,6 +348,11 @@ func refresh() -> void:
 	if team_maxed:
 		team_title.text = "全队共享 Buff · 全部升满"
 	team_waiting.text = "全队 Buff 全部升满（每项 3 级）\n等待尚未完成的技能强化" if team_maxed else "全队 Buff 已选完 · 等待下方技能强化"
+	team_instructions.text = "全队共享 · 鼠标左键任选一项，两人同时获得 · 三个窗口全部选完继续"
+	if game.choosing_opening_majors():
+		team_title.text = "%s难度 · 开局大技能" % game.run_difficulty().name
+		team_waiting.text = "每人选择 %d 个不重复大技能\n双方全部选完后开战，不消耗正常升级次数" % int(game.run_difficulty().starting_majors)
+		team_instructions.text = "在下方各自的三张卡中鼠标选择 · 只解锁自己的技能 · 已选大技能不会重复出现"
 	for index in range(team_buttons.size()):
 		team_buttons[index].visible = game.team_choosing and index < game.team_offers.size()
 	if game.team_choosing:
@@ -358,8 +364,8 @@ func refresh() -> void:
 				var rank := int(game.players[0].ranks.get(offer.id, 0)) + 1
 				team_buttons[index].show_offer("buff_" + str(offer.id), offer.title, rank, Upgrades.effect_text(offer.id, rank))
 				team_buttons[index].tooltip_text = "%s\n%s\n同时作用于 P1 和 P2" % [offer.detail, offer.note]
-	time_label.text = "%s\n%02d:%02d   %s" % ["破线模式 · 满强化" if game.breakthrough_mode else "双人幸存者", seconds / 60, seconds % 60,
-		"升级暂停" if selecting else ("终局决斗" if game.final_battle else "存活至终局")]
+	time_label.text = "%s\n%02d:%02d   %s" % ["破线模式 · 满强化" if game.breakthrough_mode else "双人幸存者 · %s" % game.run_difficulty().name, seconds / 60, seconds % 60,
+		"开局选择" if game.choosing_opening_majors() else ("升级暂停" if selecting else ("终局决斗" if game.final_battle else "存活至终局"))]
 	if not game.selecting_classes:
 		var wave_left := maxi(0, int(ceil(game.next_wave - game.elapsed)))
 		var stage := "混合围攻" if seconds >= 120 else ("重装加入" if seconds >= 60 else ("精英加入" if seconds >= 18 else "边缘来袭"))
@@ -422,6 +428,8 @@ func refresh() -> void:
 			choice_titles[id].text = "P%d · %s强化 · 第 %d 次" % [id + 1, Classes.NAMES[player.role], player.skill_choices + 1]
 			if bool(player.offers[0].get("major", false)):
 				choice_titles[id].text = "P%d · 第 %d 次 · 选择大技能" % [id + 1, player.skill_choices + 1]
+			if game.opening_major_pending[id] > 0:
+				choice_titles[id].text = "P%d · 开局大技能 · 剩余 %d 个" % [id + 1, game.opening_major_pending[id]]
 			var signature := str(player.offers) + str(player.skill_ranks)
 			if signature != offer_signatures[id]:
 				offer_signatures[id] = signature
@@ -433,6 +441,7 @@ func refresh() -> void:
 					var icon := "fireball" if str(offer.id).begins_with("fire_") else ("frost" if str(offer.id).begins_with("frost_") else ("dash" if str(offer.id).begins_with("dash_") else ("rescue" if str(offer.id).begins_with("rescue_") else "giant")))
 					if str(offer.id).begins_with("tower_"):
 						icon = offer.id
+					if offer.id == "dash_blades": icon = "dash_blades"
 					if str(offer.id).begins_with("warcry_"):
 						icon = "warcry"
 					choice_buttons[id][index].show_offer(icon, offer.title, rank, detail, major)
@@ -476,11 +485,11 @@ func _refresh_skill_icons(id: int, player) -> void:
 			if dummy.owner_id == id and dummy.is_active(): taunt_active = maxf(taunt_active, dummy.warcry_remaining)
 		slots = [
 			["dash", player.skill_name(), "Q" if id == 0 else "右键", main_cd, main_total, main_active,
-				"%s；无敌、无初始击退，伤害 ×3.2\n宽度 %.0f、距离 %.0f；穿过每名不同敌人返还 %.2fs，单次最多 %.0f%%（已返还 %.2fs）\n二段突袭：%s · 炎刃附魔：%s · 破空斩：%s\n二段窗口 2 秒，两段共用返还上限；基础冷却 6 秒。" % ["Q 自动索敌：优先最高等级，同等级选最近；无目标不释放" if id == 0 else "右键朝鼠标方向冲刺", float(player.skill_stats.hit_radius) * 2.0, float(player.skill_stats.distance), float(player.skill_stats.refund_seconds), float(player.skill_stats.refund_cap) * 100.0, player.dash_refund_total, "已获得" if bool(player.skill_stats.dash_recast) else "未获得", "已获得" if bool(player.skill_stats.dash_flame) else "未获得", "已获得" if bool(player.skill_stats.dash_wave) else "未获得"]],
+				"%s；无敌、无初始击退，基础物理伤害 ×3.2；冲刺独立伤害 ×%.2f\n宽度 %.0f、距离 %.0f；每次冲刺技能族有效命中返还 %.2fs，单次最多 %.0f%%（已返还 %.2fs）\n独立乘区覆盖本体、二段、破空斩、剑气残痕，与全局伤害和并肩反攻相乘。\n二段突袭：%s · 剑气残痕：%s · 破空斩：%s\n残痕持续 2 秒，每 0.2 秒物理伤害 ×0.25，最多 10 跳，结束处决伤害 ×6；本体、破空斩、路径跳伤与处决均触发回流。\n二段窗口 2 秒，两段共用返还上限；基础冷却 6 秒。" % ["Q 自动索敌：优先最高等级，同等级选最近；无目标不释放" if id == 0 else "右键朝鼠标方向冲刺", float(player.skill_stats.dash_power), float(player.skill_stats.hit_radius) * 2.0, float(player.skill_stats.distance), float(player.skill_stats.refund_seconds), float(player.skill_stats.refund_cap) * 100.0, player.dash_refund_total, "已获得" if bool(player.skill_stats.dash_recast) else "未获得", "已获得" if bool(player.skill_stats.dash_blades) else "未获得", "已获得" if bool(player.skill_stats.dash_wave) else "未获得"]],
 			["warcry", "嘲讽木桩" if bool(player.skill_stats.warcry_dummy) else "战吼", "E" if id == 0 else "1", player.warcry_cooldown, Classes.WARCRY_COOLDOWN, taunt_active,
 				"原地生成嘲讽木桩，持续 %.0f 秒，生命为自身最大生命 %.0f%%；仅木桩嘲讽。冷却 20 秒。" % [player.skill_stats.dummy_duration, float(player.skill_stats.dummy_hp) * 100] if bool(player.skill_stats.warcry_dummy) else "全图敌人优先锁定自己，持续 %.0f 秒；冷却 20 秒。大技能 1：嘲讽木桩，替代自身嘲讽。" % player.skill_stats.warcry_duration],
-			["giant", "巨大化撞击", "R" if id == 0 else "2", player.giant_cooldown, Classes.GIANT_COOLDOWN, player.giant_remaining,
-				"体型 ×%.1f、移速 +100%%、减伤 80%%；持续 %.1fs，冷却 15 秒\n撞击伤害 ×%.1f，击退 %.0f（受敌人韧性影响）；同一敌人每 0.5 秒可再撞击\n人肉炮弹：%s · 荆棘反甲：%s · 震地余波：%s\n反甲：巨化期间反弹敌方原始伤害 ×3，再乘全队伤害加成；不受自身护盾、减伤影响。" % [float(player.skill_stats.giant_size), float(player.skill_stats.giant_duration), Classes.GIANT_DAMAGE * float(player.skill_stats.giant_power), Classes.GIANT_KNOCKBACK * float(player.skill_stats.giant_power), "已获得" if bool(player.skill_stats.giant_cannon) else "未获得", "已获得" if bool(player.skill_stats.giant_thorns) else "未获得", "已获得" if bool(player.skill_stats.giant_quake) else "未获得"]],
+			["giant", "巨大化撞击", "R" if id == 0 else "2", player.giant_cooldown + player.giant_remaining, Classes.GIANT_COOLDOWN + float(player.skill_stats.giant_duration), player.giant_remaining,
+				"体型 ×%.1f、移速 +100%%、减伤 60%%；持续 %.1fs，结束后开始 12 秒冷却\n撞击伤害 ×%.1f，击退 %.0f（受敌人韧性影响）；同一敌人每 0.5 秒可再撞击\n人肉炮弹：%s · 荆棘反甲：%s · 震地余波：%s\n反甲：巨化期间反弹敌方原始伤害 ×3，再乘全队伤害加成；不受自身护盾、减伤影响。" % [float(player.skill_stats.giant_size), float(player.skill_stats.giant_duration), Classes.GIANT_DAMAGE * float(player.skill_stats.giant_power), Classes.GIANT_KNOCKBACK * float(player.skill_stats.giant_power), "已获得" if bool(player.skill_stats.giant_cannon) else "未获得", "已获得" if bool(player.skill_stats.giant_thorns) else "未获得", "已获得" if bool(player.skill_stats.giant_quake) else "未获得"]],
 			["rescue", "救援", "空格" if id == 0 else "3", player.rescue_cooldown, Classes.RESCUE_COOLDOWN, player.carry_remaining,
 				"瞬移到队友并携带 3 秒，替队友承担伤害；释放后自身无敌 1 秒，冷却 20 秒。救援立即复活机会：%s。\n被动护盾 %.1f / %.1f：每秒恢复最大生命 %.1f%%，上限 %.0f%%。\n大技能 1 · 庇护救援：%s。抵达后补满自身被动护盾；队友 10 秒庇护，护盾为战士最大生命 50%%，韧性 50%%，每秒额外回血 3%%。\n大技能 3 · 并肩反攻：%s。成功携带或立即复活后双方伤害独立 ×1.3，持续 5 秒。" % ["已用完" if game.instant_revive_used else "可用", player.guard_shield, player.guard_shield_max(), float(player.skill_stats.guard_regen) * 100, float(player.skill_stats.guard_cap) * 100, "已获得" if bool(player.skill_stats.rescue_blessing) else "未获得", "已获得" if bool(player.skill_stats.rescue_counterattack) else "未获得"]]
 		]
@@ -488,13 +497,13 @@ func _refresh_skill_icons(id: int, player) -> void:
 		var keys := ["Q", "E", "R"] if id == 0 else ["右键", "1", "2"]
 		slots = [
 			["fireball", "大火球", keys[0], player.fireball_cooldown / recovery, Mage.FIREBALL_COOLDOWN / recovery, 0.0,
-				"最高等级优先；宽度 ×%.1f，%d 重火球（每 0.3 秒重新定位索敌）\n炎浪击退：%s · 烈焰之路：%s · 吞能炎星：%s\n火属性命中冰附着目标，3 秒内火伤 ×2；冷却 15 秒。" % [float(player.skill_stats.fire_width), int(player.skill_stats.fire_count), "已获得" if bool(player.skill_stats.fire_push) else "未获得", "已获得" if bool(player.skill_stats.fire_ground) else "未获得", "已获得" if bool(player.skill_stats.fire_growth) else "未获得"]],
-			["frost", "冰霜 Lv.%d" % int(player.skill_ranks.get("frost_width", 0)), keys[1], player.frost_cooldown / recovery, Mage.FROST_COOLDOWN / recovery, player.frost_remaining,
-				"随身领域半径 %.0f；伤害频率 ×%.0f\n移速 -40%%、攻速 -35%%，持续 5 秒，冷却 15 秒\n冰锥雨：%s · 冰径：%s · 庇护寒域：%s（护盾 %.0f / %.0f）\n冰属性命中火附着目标，3 秒内冰伤 ×2；护罩继承领域范围强化。" % [game.mage_system.frost_radius(player), float(player.skill_stats.frost_rate), "已获得" if bool(player.skill_stats.frost_cones) else "未获得", "已获得" if bool(player.skill_stats.frost_path) else "未获得", "已获得" if bool(player.skill_stats.frost_ward) else "未获得", player.frost_shield_hp, float(player.stats.max_hp) * 1.5]],
+				"最高等级优先；半径 ×%.1f，火系伤害 ×%.2f，%d 重火球（每 0.3 秒重新定位索敌）\n伤害强化作用于火球、火区、灼烧和吞能炎星爆炸\n炎浪击退：%s · 烈焰之路：%s · 吞能炎星：%s\n火属性命中冰附着目标，3 秒内火伤 ×2；冷却 15 秒。" % [float(player.skill_stats.fire_width), float(player.skill_stats.fire_power), int(player.skill_stats.fire_count), "已获得" if bool(player.skill_stats.fire_push) else "未获得", "已获得" if bool(player.skill_stats.fire_ground) else "未获得", "已获得" if bool(player.skill_stats.fire_growth) else "未获得"]],
+			["frost", "冰霜 Lv.%d" % int(player.skill_ranks.get("frost_width", 0)), keys[1], player.frost_cooldown / recovery, Mage.FROST_COOLDOWN / recovery, maxf(player.frost_remaining, player.frost_ward_remaining),
+				"随身领域半径 %.0f；伤害频率 ×%.0f；所有冰系伤害独立 ×%.1f\n移速 -40%%、攻速 -35%%，领域持续 5 秒，冷却 15 秒\n冰锥雨：%s · 冰径：%s · 庇护寒域：%s（护罩 %.0f / %.0f）\n冰伤乘区覆盖领域和所有冰系大技能，与全局伤害、附身、反应相乘；冰附着/冰径目前无持续伤害。\n守护罩固定半径 1.5 身位（48 像素），仅挡敌方弹丸；生命为施放时最大生命 100%%，独立持续 10 秒，剩余 %.1fs。等级、体型、附身不扩大护罩，破罩不结束领域。\n冰属性命中火附着目标，3 秒内冰伤 ×2。" % [game.mage_system.frost_radius(player), float(player.skill_stats.frost_rate), float(player.skill_stats.frost_power), "已获得" if bool(player.skill_stats.frost_cones) else "未获得", "已获得" if bool(player.skill_stats.frost_path) else "未获得", "已获得" if bool(player.skill_stats.frost_ward) else "未获得", player.frost_shield_hp, player.frost_shield_max, player.frost_ward_remaining]],
 			["possession", "附身", keys[2], player.possession_cooldown / recovery, Mage.POSSESSION_COOLDOWN / recovery, player.possession_remaining,
 				"%d 范围内附到队友头顶，持续 5 秒；伤害 +35%%、范围 +25%%、冷却恢复 +25%%，冷却 25 秒。" % int(Mage.POSSESSION_RANGE)],
 			["lightning_tower", player.skill_name(), player.skill_binding(), 0.0, 1.0, 0.0,
-				"原地召唤固定雷楞塔，持续 %.0f 秒，全屏索敌\n每 %.2f 秒电击画面内最近的单个敌人，伤害 ×%.2f，继承全局伤害强化\n天雷链狱：%s · 雷霆潮汐：%s · 雷神裁决：%s\n最多储存 2 次，每 15 秒依次恢复 1 次，释放间隔 2 秒；强化应用于新召唤的塔。" % [float(player.skill_stats.tower_duration), 0.8 / float(player.skill_stats.tower_rate), float(player.skill_stats.tower_damage), "已获得" if bool(player.skill_stats.tower_chain) else "未获得", "已获得" if bool(player.skill_stats.tower_tide) else "未获得", "已获得" if bool(player.skill_stats.tower_judgment) else "未获得"]]
+				"原地召唤固定雷楞塔，持续 %.0f 秒，全屏索敌\n每 %.2f 秒电击最近敌人；角色伤害 ×0.47 ×核心 %.2f，最终雷击倍率 ×%.3f，继承全局伤害加成\n天雷链狱：%s · 雷霆潮汐：%s · 雷神裁决：%s\n所有大技能倍率以这次雷击伤害为基准，不重复乘 0.47；链狱每段 ×0.15，雷柱 ×2 / 2.5 / 3；潮汐环 ×1.8、末秒环 ×2.4、自爆 ×6 ×寿命/10；Boss 裁决 12 连击触发 ×15。\n最多储存 2 次，每 15 秒依次恢复 1 次，释放间隔 2 秒。" % [float(player.skill_stats.tower_duration), 0.8 / float(player.skill_stats.tower_rate), float(player.skill_stats.tower_damage), Classes.TOWER_BASE_DAMAGE * float(player.skill_stats.tower_damage), "已获得" if bool(player.skill_stats.tower_chain) else "未获得", "已获得" if bool(player.skill_stats.tower_tide) else "未获得", "已获得" if bool(player.skill_stats.tower_judgment) else "未获得"]]
 		]
 	for slot in range(4):
 		var data: Array = slots[slot]

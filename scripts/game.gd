@@ -76,6 +76,8 @@ var shared_xp := 0
 var team_level := 1
 var selecting_classes := true
 var breakthrough_mode := false
+var selected_difficulty := 0
+var opening_major_pending := [0, 0]
 var selected_classes := [Classes.GUNNER, Classes.RAIDER]
 var class_ready := [false, false]
 var skill_effects: Array[Dictionary] = []
@@ -244,6 +246,27 @@ func select_mode(enabled: bool) -> void:
 	class_ready = [false, false]
 	hud.refresh()
 
+func select_difficulty(index: int) -> void:
+	if not selecting_classes or breakthrough_mode or index < 0 or index >= Balance.RUN_DIFFICULTIES.size(): return
+	selected_difficulty = index
+	class_ready = [false, false]
+	hud.refresh()
+
+func run_difficulty() -> Dictionary:
+	return Balance.RUN_DIFFICULTIES[0 if breakthrough_mode else selected_difficulty]
+
+func choosing_opening_majors() -> bool:
+	return opening_major_pending[0] > 0 or opening_major_pending[1] > 0
+
+func _apply_enemy_difficulty(enemy) -> void:
+	var tuning := run_difficulty()
+	enemy.max_hp *= float(tuning.health)
+	enemy.hp = enemy.max_hp
+	enemy.damage *= float(tuning.damage)
+	if enemy is MilkBoss:
+		enemy.second_life_hp *= float(tuning.health)
+		enemy.second_life_damage *= float(tuning.damage)
+
 func start_run() -> void:
 	if not selecting_classes:
 		return
@@ -264,7 +287,10 @@ func start_run() -> void:
 	else:
 		# Begin the normal edge stream immediately, without a nearby opening group.
 		spawn_credit = 1.0
-		_update_spawning(0.0)
+		var opening_count := int(run_difficulty().starting_majors)
+		opening_major_pending = [opening_count, opening_count]
+		if choosing_opening_majors(): _begin_pending_choices()
+		else: _update_spawning(0.0)
 	hud.refresh()
 
 func activate_skill(id: int, movement := Vector2.ZERO) -> bool:
@@ -311,7 +337,7 @@ func activate_warrior_skill(id: int, slot: int) -> bool:
 			enemy.set_priority_target(taunt_target, true)
 		skill_effects.append({"position": player.position, "color": Color("ff665f"), "life": 0.35})
 	elif slot == 2:
-		if player.giant_cooldown > 0.0:
+		if player.giant_cooldown > 0.0 or player.giant_remaining > 0.0:
 			return false
 		warrior_system.begin_giant(player)
 		var margin: float = player.collision_radius() + 2.0
@@ -402,10 +428,16 @@ func _begin_pending_choices() -> void:
 		if not team_choosing:
 			team_pending_upgrades = 0 # All team entries capped: skip an empty window.
 	for player in players:
+		if opening_major_pending[player.player_id] > 0:
+			if not player.choosing:
+				player.offers = SkillUpgrades.roll(player.rng, player.role, player.skill_ranks, 2)
+				player.choosing = not player.offers.is_empty()
+			continue
 		if player.pending_upgrades > 0 and not player.choosing:
 			player.begin_choice()
 
 func has_pending_upgrades() -> bool:
+	if choosing_opening_majors(): return true
 	if team_pending_upgrades > 0:
 		return true
 	for player in players:
@@ -430,7 +462,16 @@ func choose_team_upgrade(index: int) -> bool:
 func choose_upgrade(id: int, index: int) -> bool:
 	if selecting_classes or paused or game_over or id < 0 or id >= players.size():
 		return false
-	if not players[id].choose(index):
+	var player = players[id]
+	if opening_major_pending[id] > 0:
+		if not player.choosing or index < 0 or index >= player.offers.size(): return false
+		if not SkillUpgrades.apply(player, str(player.offers[index].id)): return false
+		opening_major_pending[id] -= 1
+		player.offers.clear()
+		player.choosing = false
+		# Opening gifts do not consume the every-third-upgrade major schedule.
+		if not choosing_opening_majors(): _update_spawning(0.0)
+	elif not player.choose(index):
 		return false
 	# Each player advances their own choices without waiting for the other.
 	_begin_pending_choices()
@@ -694,6 +735,7 @@ func _spawn_enemy(at: Vector2) -> void:
 			kind = "normal"
 	var enemy := Enemy.new()
 	enemy.setup(at, Balance.difficulty(elapsed), kind == "elite", kind)
+	_apply_enemy_difficulty(enemy)
 	enemy.ranged_attack.connect(_fire_enemy_pattern)
 	world.add_child(enemy)
 	enemies.append(enemy)
@@ -730,6 +772,7 @@ func _spawn_mini_boss() -> void:
 		mini_boss.ground_attack.connect(_fire_ground_pattern)
 		mini_boss.summon_guards.connect(_queue_boss_support)
 	mini_boss.setup_boss(_boss_edge_position(), Balance.difficulty(elapsed), Balance.xp_required(team_level))
+	_apply_enemy_difficulty(mini_boss)
 	mini_boss.ranged_attack.connect(_fire_enemy_pattern)
 	world.add_child(mini_boss)
 	enemies.append(mini_boss)
@@ -756,6 +799,7 @@ func _spawn_final_boss() -> void:
 	mini_boss.combat_players = players
 	mini_boss.setup_boss(_boss_edge_position(), Balance.difficulty(Balance.FINAL_BOSS_SECONDS), 0)
 	_apply_breakthrough_health(mini_boss, "melee")
+	_apply_enemy_difficulty(mini_boss)
 	mini_boss.melee_strike.connect(_resolve_final_strike)
 	world.add_child(mini_boss)
 	enemies.append(mini_boss)
@@ -775,6 +819,7 @@ func _spawn_ranged_final_boss() -> void:
 	mini_boss.combat_players = players
 	mini_boss.setup_boss(_boss_edge_position(), Balance.difficulty(Balance.FINAL_BOSS_SECONDS), 0)
 	_apply_breakthrough_health(mini_boss, "artillery")
+	_apply_enemy_difficulty(mini_boss)
 	mini_boss.artillery_volley.connect(_fire_artillery_volley)
 	mini_boss.artillery_bombardment.connect(_fire_artillery_bombardment)
 	world.add_child(mini_boss)
@@ -790,6 +835,7 @@ func _spawn_milk_final_boss() -> void:
 	mini_boss.combat_players = players
 	mini_boss.setup_boss(_boss_edge_position(), Balance.difficulty(elapsed), 0)
 	_apply_breakthrough_health(mini_boss, "milk")
+	_apply_enemy_difficulty(mini_boss)
 	mini_boss.melee_strike.connect(_resolve_final_strike)
 	mini_boss.milk_volley.connect(_fire_milk_volley)
 	mini_boss.milk_bombs.connect(_fire_milk_bombs)
@@ -825,6 +871,7 @@ func _flush_milk_clones() -> void:
 			var clone := MilkClone.new()
 			var spawn: Vector2 = source._inside_arena(source.position+Vector2.from_angle(slot*TAU/4)*150)
 			clone.setup_clone(spawn,source)
+			_apply_enemy_difficulty(clone)
 			clone.ranged_attack.connect(_fire_milk_clone)
 			world.add_child(clone)
 			enemies.append(clone)
@@ -1000,6 +1047,7 @@ func _flush_boss_support() -> void:
 			if enemies.size() >= Balance.MAX_ENEMIES: break
 			var guard := BossGuard.new()
 			guard.setup_guard(_boss_edge_position(), Balance.difficulty(elapsed), source, source.guard_count())
+			_apply_enemy_difficulty(guard)
 			world.add_child(guard)
 			enemies.append(guard)
 			source.guards.append(guard)
@@ -1221,7 +1269,7 @@ func _spawn_bullet(player, direction: Vector2, multiplier := 1.0, source := "aut
 	world.add_child(bullet)
 	projectiles.append(bullet)
 
-func _damage_enemy(enemy, amount: float, owner_id: int, highlighted := false, source := "auto") -> void:
+func _damage_enemy(enemy, amount: float, owner_id: int, highlighted := false, source := "auto", element := "", reaction := false) -> void:
 	if enemy.dead:
 		return
 	var health_before: float = maxf(0.0, enemy.hp)
@@ -1234,11 +1282,21 @@ func _damage_enemy(enemy, amount: float, owner_id: int, highlighted := false, so
 		damage_breakdown[owner_id][category] = float(damage_breakdown[owner_id].get(category, 0.0)) + actual_damage
 	if actual_damage > 0.0:
 		if damage_events.size() >= DamageNumbers.MAX_EVENTS: damage_events.pop_front()
-		var font_size := DamageNumbers.font_size_for(actual_damage, highlighted)
+		var reacting: bool = reaction and element in ["fire", "ice"]
+		var reaction_label := reacting
+		if reacting:
+			# Dense pulses still emphasize every reaction; limit repeated captions on one target.
+			for previous in damage_events:
+				if previous.get("enemy_id", 0) == enemy.get_instance_id() and previous.get("reaction_label", false) and float(previous.life) > DamageNumbers.LIFETIME - 0.35:
+					reaction_label = false
+					break
+		var font_size := DamageNumbers.font_size_for(actual_damage, highlighted, reacting)
 		var offset := Vector2((damage_serial % 5 - 2) * (20.0 + font_size * 0.4), -maxf(34.0, enemy.radius * 2.3) - (damage_serial % 3) * 9.0)
 		damage_serial += 1
 		damage_events.append({"position": enemy.position + offset, "amount": maxi(1, roundi(actual_damage)),
-			"critical": highlighted, "font_size": font_size, "life": DamageNumbers.LIFETIME})
+			"critical": highlighted, "font_size": font_size, "life": DamageNumbers.LIFETIME,
+			"element": element if not element.is_empty() else DamageNumbers.element_for_source(source),
+			"reaction": reacting, "reaction_label": reaction_label, "enemy_id": enemy.get_instance_id()})
 		damage_numbers.queue_redraw()
 	if killed:
 		players[owner_id].kills += 1

@@ -38,20 +38,20 @@ func run() -> void:
 	game.activate_warrior_skill(0, 2)
 	warrior.invulnerability = 0.0
 	warrior.take_damage(1.0)
-	check(warrior.giant_cooldown == 14.5 and warrior.giant_refund_total == 0.5, "Giant effective hit refunds half a second")
+	check(warrior.giant_cooldown == 11.5 and warrior.giant_refund_total == 0.5, "Giant effective hit refunds half a second")
 	warrior.take_damage(1.0)
 	check(warrior.giant_refund_total == 0.5, "invulnerability-blocked hits cannot farm cooldown refund")
 	for index in range(10):
 		warrior.invulnerability = 0.0
 		warrior.take_damage(1.0)
-	check(warrior.giant_refund_total == 3.0 and warrior.giant_cooldown == 12.0, "refund is capped at three seconds per Giant cast")
+	check(warrior.giant_refund_total == 3.0 and warrior.giant_cooldown == 9.0, "refund is capped at three seconds per Giant cast")
 	warrior.giant_remaining = 0.0
 	warrior.invulnerability = 0.0
 	warrior.take_damage(1.0)
-	check(warrior.giant_cooldown == 12.0, "damage outside Giant does not reduce its cooldown")
+	check(warrior.giant_cooldown == 9.0, "damage outside Giant does not reduce its cooldown")
 	warrior.giant_cooldown = 0.0
 	game.activate_warrior_skill(0, 2)
-	check(warrior.giant_refund_total == 0.0 and warrior.giant_cooldown == 15.0, "a new Giant cast resets the refund budget")
+	check(warrior.giant_refund_total == 0.0 and warrior.giant_cooldown == 12.0, "a new Giant cast resets the refund budget")
 	warrior.giant_cooldown = 0.2
 	warrior.invulnerability = 0.0
 	warrior.take_damage(1.0)
@@ -105,7 +105,7 @@ func run() -> void:
 	warrior.take_damage(100.0, attacker.get_instance_id())
 	game.warrior_system.flush_reflections()
 	check(warrior.hp == hp and is_equal_approx(attacker.hp, 99700.0)
-		and is_equal_approx(warrior.blessing_shield, 485.0), "full absorption and stacked reductions still reflect three times raw incoming damage")
+		and is_equal_approx(warrior.blessing_shield, 460.0), "full absorption and Giant mitigation still reflect three times raw incoming damage")
 	Upgrades.apply(warrior, "damage")
 	warrior.invulnerability = 0.0
 	warrior.take_damage(100.0, attacker.get_instance_id())

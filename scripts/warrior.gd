@@ -8,6 +8,12 @@ const SLASH_DAMAGE := 4.5
 const SLASH_SPEED := 1150.0
 const SLASH_KNOCKBACK := 100.0
 const MAX_SLASHES := 8
+const BLADE_LIFE := 2.0
+const BLADE_TICK := 0.2
+const BLADE_DAMAGE := 0.25
+const BLADE_EXECUTE_DAMAGE := 6.0
+const BLADE_MAX_HITS := 10
+const MAX_BLADE_TRAILS := 8
 const MAX_CANNONS := 32
 const CANNON_DEPTH := 4
 const CANNON_LIMIT := 2
@@ -18,6 +24,9 @@ const QUAKE_DAMAGE := 3.5
 const THORNS_MULTIPLIER := 3.0
 var game
 var slashes: Array[Dictionary] = []
+var blade_trails: Array[Dictionary] = []
+var dash_cast_ids: Array[int] = [0, 0]
+var dash_cycle_ids: Array[int] = [0, 0]
 var cannons: Array[Dictionary] = []
 var effects: Array[Dictionary] = []
 var reflections: Array[Dictionary] = []
@@ -28,9 +37,12 @@ func _ready() -> void:
 	visuals.system = self
 	add_child(visuals)
 
+func dash_damage_base(player) -> float:
+	return player.output_damage() * float(player.skill_stats.dash_power)
+
 func effect(kind: String, data: Dictionary, lifetime := 0.5) -> void:
 	# One continuous ribbon per dash keeps frame-by-frame sparks from stacking.
-	if kind in ["dash", "flame"]:
+	if kind == "dash":
 		for index in range(effects.size() - 1, -1, -1):
 			var previous: Dictionary = effects[index]
 			if previous.kind == kind and previous.owner == data.owner and previous.second == data.second and previous.end.distance_to(data.start) < 1.0:
@@ -54,6 +66,7 @@ func activate_dash(id: int, movement: Vector2) -> bool:
 		return false
 	var direction: Vector2 = movement.normalized() if movement.length_squared() > 0.0 else player.last_move_direction
 	if not second:
+		dash_cycle_ids[id] += 1
 		player.dash_cycle_hit_ids.clear()
 		player.dash_refund_total = 0.0
 		player.skill_cooldown = float(player.skill_stats.cooldown)
@@ -61,6 +74,7 @@ func activate_dash(id: int, movement: Vector2) -> bool:
 	else:
 		player.dash_recast_armed = false
 	player.dash_second_cast = second
+	dash_cast_ids[id] += 1
 	player.dash_recast_remaining = 0.0
 	player.last_move_direction = direction
 	player.return_origin = player.position
@@ -71,20 +85,80 @@ func activate_dash(id: int, movement: Vector2) -> bool:
 	player.dash_hit_ids.clear()
 	player.invulnerability = maxf(player.invulnerability, float(player.skill_stats.dash_invulnerability))
 	if bool(player.skill_stats.dash_wave) and slashes.size() < MAX_SLASHES:
+		var damage_base := dash_damage_base(player)
 		slashes.append({"position": player.position, "direction": direction, "owner": id,
-			"radius": float(player.skill_stats.hit_radius) * 0.85, "damage": player.output_damage() * SLASH_DAMAGE,
-			"fire": bool(player.skill_stats.dash_flame), "life": 2.0, "hits": {}, "trail": player.position, "trail_tick": 0.0})
+			"radius": float(player.skill_stats.hit_radius) * 0.85, "damage": damage_base * SLASH_DAMAGE,
+			"cycle": dash_cycle_ids[id], "life": 2.0, "hits": {}})
 	if bool(player.skill_stats.dash_recast):
 		effect("recast", {"position": player.position, "radius": 65.0, "second": second}, 0.55)
 	player.queue_redraw()
 	game.hud.refresh()
 	return true
 
-func _damage(enemy, amount: float, owner: int, fire := false, source := "dash") -> void:
-	if fire:
-		game.mage_system.elements.damage(enemy, amount, owner, "fire", true, source)
-	else:
-		game._damage_enemy(enemy, amount, owner, true, source)
+func _damage(enemy, amount: float, owner: int, source := "dash", cycle := -1, highlighted := true) -> void:
+	var before: float = maxf(0.0, enemy.hp)
+	game._damage_enemy(enemy, amount, owner, highlighted, source)
+	var actual: float = maxf(0.0, before - maxf(0.0, enemy.hp))
+	_refund_dash_hit(owner, dash_cycle_ids[owner] if cycle < 0 else cycle, actual, enemy.position)
+
+func _refund_dash_hit(owner: int, cycle: int, actual: float, at: Vector2) -> void:
+	if actual <= 0.0 or cycle != dash_cycle_ids[owner]: return
+	var player = game.players[owner]
+	if player.role != Classes.RAIDER: return
+	var cap: float = float(player.skill_stats.cooldown) * float(player.skill_stats.refund_cap)
+	var refund := minf(float(player.skill_stats.refund_seconds), maxf(0.0, cap - player.dash_refund_total))
+	refund = minf(refund, player.skill_cooldown)
+	if refund <= 0.00001: return
+	player.dash_refund_total += refund
+	player.skill_cooldown = maxf(0.0, player.skill_cooldown - refund)
+	effect("refund", {"position": at, "amount": refund}, 0.4)
+
+func _inside_blade_trail(trail: Dictionary, enemy) -> bool:
+	for index in range(1, trail.points.size()):
+		var nearest := Geometry2D.get_closest_point_to_segment(enemy.position, trail.points[index - 1], trail.points[index])
+		if nearest.distance_squared_to(enemy.position) <= pow(enemy.radius + float(trail.radius), 2): return true
+	return false
+
+func _execute_blade_trail(trail: Dictionary) -> void:
+	effect("blade_finish", {"points": trail.points, "radius": trail.radius, "owner": trail.owner}, 0.4)
+	for enemy in game.enemies:
+		if not enemy.dead and _inside_blade_trail(trail, enemy):
+			_damage(enemy, float(trail.execute_damage), int(trail.owner), "blade_execute", int(trail.cycle))
+
+func _add_blade_trail(player, start: Vector2, end: Vector2) -> void:
+	if start.distance_squared_to(end) <= 0.01: return
+	for trail in blade_trails:
+		if trail.owner == player.player_id and trail.cast == dash_cast_ids[player.player_id]:
+			trail.points.append(end)
+			trail.life = BLADE_LIFE
+			return
+	if blade_trails.size() >= MAX_BLADE_TRAILS: return
+	blade_trails.append({"owner": player.player_id, "cast": dash_cast_ids[player.player_id],
+		"cycle": dash_cycle_ids[player.player_id],
+		"points": PackedVector2Array([start, end]), "radius": float(player.skill_stats.hit_radius) * 0.6,
+		"damage": dash_damage_base(player) * BLADE_DAMAGE, "execute_damage": dash_damage_base(player) * BLADE_EXECUTE_DAMAGE,
+		"life": BLADE_LIFE, "timers": {}, "hits": {}})
+
+func _advance_blade_trails(delta: float) -> void:
+	for trail in blade_trails:
+		var active_delta := minf(delta, trail.life)
+		for id in trail.timers:
+			trail.timers[id] = float(trail.timers[id]) - active_delta
+		for enemy in game.enemies:
+			var id: int = enemy.get_instance_id()
+			if enemy.dead or int(trail.hits.get(id, 0)) >= BLADE_MAX_HITS: continue
+			if not _inside_blade_trail(trail, enemy):
+				if trail.timers.has(id): trail.timers[id] = maxf(0.0, trail.timers[id])
+				continue
+			# One ledger per complete dash: intersecting segments never multiply the tick budget.
+			if not trail.timers.has(id): trail.timers[id] = -active_delta
+			while float(trail.timers[id]) <= 0.00001 and int(trail.hits.get(id, 0)) < BLADE_MAX_HITS and not enemy.dead:
+				trail.hits[id] = int(trail.hits.get(id, 0)) + 1
+				trail.timers[id] += BLADE_TICK
+				_damage(enemy, float(trail.damage), int(trail.owner), "blade_trail", int(trail.cycle), false)
+		trail.life = maxf(0.0, float(trail.life) - delta)
+		if trail.life <= 0.00001: _execute_blade_trail(trail)
+	blade_trails = blade_trails.filter(func(trail): return trail.life > 0.00001)
 
 func queue_reflection(raw: float, source_id: int, player) -> void:
 	if raw <= 0.0 or player.role != Classes.RAIDER or player.giant_remaining <= 0.0:
@@ -130,26 +204,16 @@ func grant_rescue_counterattack(player, ally) -> void:
 func hit_dash(id: int, start: Vector2, end: Vector2) -> void:
 	var player = game.players[id]
 	var radius := float(player.skill_stats.hit_radius)
-	var fire := bool(player.skill_stats.dash_flame)
-	effect("flame" if fire else "dash", {"start": start, "end": end, "radius": radius,
-		"owner": id, "second": player.dash_second_cast}, 0.42 if fire else 0.2)
-	if fire and start.distance_to(end) > 0.1:
-		game.mage_system._ground("fire", start, end, radius * 0.6, player, player.output_damage() * 0.18)
+	effect("dash", {"start": start, "end": end, "radius": radius,
+		"owner": id, "second": player.dash_second_cast}, 0.2)
+	if bool(player.skill_stats.dash_blades): _add_blade_trail(player, start, end)
 	for enemy in game.enemies:
 		var enemy_id: int = enemy.get_instance_id()
 		if enemy.dead or player.dash_hit_ids.has(enemy_id): continue
 		var nearest := Geometry2D.get_closest_point_to_segment(enemy.position, start, end)
 		if nearest.distance_squared_to(enemy.position) > pow(enemy.radius + radius, 2): continue
 		player.dash_hit_ids[enemy_id] = true
-		_damage(enemy, player.output_damage() * float(player.skill_stats.damage), id, fire)
-		if not player.dash_cycle_hit_ids.has(enemy_id):
-			player.dash_cycle_hit_ids[enemy_id] = true
-			var refund := minf(player.dash_cycle_hit_ids.size() * float(player.skill_stats.refund_seconds),
-				float(player.skill_stats.cooldown) * float(player.skill_stats.refund_cap))
-			var extra: float = maxf(0.0, refund - player.dash_refund_total)
-			player.dash_refund_total = refund
-			player.skill_cooldown = maxf(0.0, player.skill_cooldown - extra)
-			if extra > 0.0: effect("refund", {"position": enemy.position, "amount": extra}, 0.4)
+		_damage(enemy, dash_damage_base(player) * float(player.skill_stats.damage), id)
 
 func begin_giant(player) -> void:
 	player.giant_remaining = float(player.skill_stats.giant_duration)
@@ -221,6 +285,7 @@ func giant_contacts(starts: Array[Vector2]) -> void:
 func advance(delta: float) -> void:
 	for item in effects: item.life -= delta
 	effects = effects.filter(func(item): return item.life > 0.0)
+	_advance_blade_trails(delta)
 	for slash in slashes:
 		var start: Vector2 = slash.position
 		slash.position += slash.direction * SLASH_SPEED * minf(delta, float(slash.life))
@@ -231,16 +296,9 @@ func advance(delta: float) -> void:
 			var nearest := Geometry2D.get_closest_point_to_segment(enemy.position, start, slash.position)
 			if nearest.distance_squared_to(enemy.position) > pow(enemy.radius + float(slash.radius), 2): continue
 			slash.hits[id] = true
-			_damage(enemy, float(slash.damage), int(slash.owner), bool(slash.fire), "slash")
+			_damage(enemy, float(slash.damage), int(slash.owner), "slash", int(slash.cycle))
 			enemy.contact_knockback(slash.direction, SLASH_KNOCKBACK)
 			effect("impact", {"position": enemy.position, "radius": 45.0}, 0.25)
-		if bool(slash.fire):
-			slash.trail_tick -= delta
-			if float(slash.trail_tick) <= 0.0:
-				var player = game.players[int(slash.owner)]
-				game.mage_system._ground("fire", slash.trail, slash.position, float(slash.radius) * 0.6, player, player.output_damage() * 0.18)
-				slash.trail = slash.position
-				slash.trail_tick = 0.15
 		slash.life = 0.0 if not game.Balance.ARENA.grow(220.0).has_point(slash.position) else slash.life
 	slashes = slashes.filter(func(item): return item.life > 0.0)
 	visuals.queue_redraw()

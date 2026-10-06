@@ -28,8 +28,13 @@ func damage(enemy, amount: float, owner: int, element: String, attach_tag := tru
 		s[element + "_amp"] = REACTION_SECONDS
 	if attach_tag:
 		attach(enemy, element)
-	var multiplier := 2.0 if float(s[element + "_amp"]) > 0.0 else 1.0
-	game._damage_enemy(enemy, amount * multiplier, owner, multiplier > 1.0, source)
+	var reacting := float(s[element + "_amp"]) > 0.0
+	var multiplier := 2.0 if reacting else 1.0
+	# Apply the owner's ice multiplier once at the shared elemental damage entry.
+	# Tags themselves have no damage; future ice DOT routed here inherits this too.
+	if element == "ice" and owner >= 0 and owner < game.players.size():
+		multiplier *= float(game.players[owner].skill_stats.get("frost_power", 1.0))
+	game._damage_enemy(enemy, amount * multiplier, owner, reacting, source, element, reacting)
 
 func fire_ground(enemy, dps: float, owner: int) -> void:
 	var s := state(enemy)

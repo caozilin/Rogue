@@ -31,15 +31,15 @@ func refresh() -> void:
 		if not shell.visible:
 			continue
 		var player = system.game.players[index]
-		shell.visible = player.is_active() and player.frost_remaining > 0.0 and player.frost_shield_hp > 0.0
+		shell.visible = player.is_active() and player.frost_ward_remaining > 0.0 and player.frost_shield_hp > 0.0
 		if not shell.visible:
 			continue
-		var radius: float = system.frost_radius(player)
+		var radius: float = system.ward_radius()
 		shell.position = player.position - Vector2(0, radius * 0.26)
 		shell.scale = Vector2(radius * 2.30, radius * 2.00) / 32.0
 		shell.material.set_shader_parameter("effect_time", system.game.elapsed)
-		shell.material.set_shader_parameter("strength", minf(1.0, player.frost_remaining * 3.0))
-		shell.material.set_shader_parameter("integrity", player.frost_shield_hp / (float(player.stats.max_hp) * 1.5))
+		shell.material.set_shader_parameter("strength", minf(1.0, player.frost_ward_remaining * 3.0))
+		shell.material.set_shader_parameter("integrity", player.frost_shield_hp / maxf(1.0, player.frost_shield_max))
 		var flash := 0.0
 		var angle := 0.0
 		for hit in system.ward_impacts:
@@ -69,11 +69,11 @@ func _draw() -> void:
 			draw_polyline(crest, Color("b2f4ff"), 1.4, true)
 			draw_line(at + Vector2(0, -3), at + Vector2(0, 3), Color("e0fcff"), 1.5, true)
 			draw_line(at + Vector2(-3, 0), at + Vector2(3, 0), Color("e0fcff"), 1.5, true)
-		if player.frost_remaining <= 0.0 or player.frost_shield_hp <= 0.0:
+		if player.frost_ward_remaining <= 0.0 or player.frost_shield_hp <= 0.0:
 			continue
-		var ratio: float = clampf(player.frost_shield_hp / (float(player.stats.max_hp) * 1.5), 0.0, 1.0)
-		var radius: float = system.frost_radius(player)
-		var fade: float = minf(1.0, player.frost_remaining * 3.0)
+		var ratio: float = clampf(player.frost_shield_hp / maxf(1.0, player.frost_shield_max), 0.0, 1.0)
+		var radius: float = system.ward_radius()
+		var fade: float = minf(1.0, player.frost_ward_remaining * 3.0)
 		# Curved meridians connect the canopy to its projected base.
 		for index in range(7):
 			var azimuth := PI * float(index) / 6.0
@@ -88,7 +88,7 @@ func _draw() -> void:
 		at.x = clampf(at.x, arena.position.x + 6, arena.end.x - 134)
 		at.y = maxf(at.y, arena.position.y + 112)
 		draw_style_box(panel, Rect2(at - Vector2(6, 21), Vector2(140, 37)))
-		var text := "庇护寒域  %d / %d" % [ceili(player.frost_shield_hp), roundi(float(player.stats.max_hp) * 1.5)]
+		var text := "守护罩 %d/%d · %.0fs" % [ceili(player.frost_shield_hp), roundi(player.frost_shield_max), player.frost_ward_remaining]
 		draw_string(ThemeDB.fallback_font, at - Vector2(0, 5), text, HORIZONTAL_ALIGNMENT_CENTER, 128, 13, Color("c9f7ff"))
 		draw_rect(Rect2(at, Vector2(128, 6)), Color("183d50"))
 		draw_rect(Rect2(at, Vector2(128 * ratio, 6)), Color("94e9ff") if ratio > 0.3 else Color("ffe1ac"))

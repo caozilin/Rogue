@@ -4,15 +4,15 @@ const Art = preload("res://scripts/art.gd")
 const Classes = preload("res://scripts/classes.gd")
 const ATTACK_INTERVAL := 0.8
 const CHAIN_RADIUS := 260.0
-const CHAIN_DAMAGE := 0.05
+const CHAIN_DAMAGE := 0.15
 const TIDE_INTERVAL := 2.5
-const TIDE_DAMAGE := 0.6
-const TIDE_FINAL_DAMAGE := 0.8
-const TIDE_DETONATION_DAMAGE := 2.0
+const TIDE_DAMAGE := 1.8
+const TIDE_FINAL_DAMAGE := 2.4
+const TIDE_DETONATION_DAMAGE := 6.0
 var game
 var effects
 var owner_id := 0
-var damage := 14.0
+var damage := 14.0 * Classes.TOWER_BASE_DAMAGE
 var life := Classes.TOWER_DURATION
 var total_duration := Classes.TOWER_DURATION
 var attack_interval := ATTACK_INTERVAL
@@ -90,10 +90,10 @@ func _judgment(target) -> void:
 		judgment_target = id
 		judgment_count = 0
 	judgment_count += 1
-	var threshold := 8 if target.kind == "boss" else (6 if target.elite else 5)
+	var threshold := 12 if target.kind == "boss" else (6 if target.elite else 5)
 	effects.tag(target, judgment_count, threshold, true)
 	if judgment_count >= threshold:
-		var power := 12.0 if target.kind == "boss" else (10.0 if target.elite else 8.0)
+		var power := 15.0 if target.kind == "boss" else (10.0 if target.elite else 8.0)
 		effects.ruling(target, damage * power, owner_id, true, damage * 2.0)
 		judgment_count = 0
 
@@ -128,7 +128,7 @@ func _chain(primary) -> void:
 			var threshold := 8 if target.kind == "boss" else (6 if target.elite else 4)
 			effects.tag(target, count, threshold)
 			if count >= threshold:
-				var power := 1.5 if target.kind == "boss" else (1.25 if target.elite else 1.0)
+				var power := 3.0 if target.kind == "boss" else (2.5 if target.elite else 2.0)
 				effects.ruling(target, damage * power, owner_id, false)
 				count = 0
 			chain_marks[id] = count

@@ -94,8 +94,7 @@ func advance(delta: float) -> void:
 				continue
 			ring.hit[id] = true
 			game._damage_enemy(enemy, ring.damage, ring.owner, ring.detonation, "tower_tide")
-			if enemy.kind != "boss" and not enemy.dead:
-				enemy.stagger_remaining = maxf(enemy.stagger_remaining, 0.18 if enemy.elite else 0.55)
+			if not enemy.dead:
 				effect("shock", {"ref": weakref(enemy), "position": enemy.position}, 0.35)
 	waves = waves.filter(func(ring): return ring.age < ring.duration)
 	refresh()

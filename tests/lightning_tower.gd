@@ -67,9 +67,9 @@ func run() -> void:
 		"P1 Space spends one charge and starts separate 15s recharge / 2s release cooldown")
 	check(first.position == p1.position and first.life == 10.0 and not game.activate_skill(0), "tower spawns at caster position; immediate recast is blocked")
 	step(0.01)
-	check(is_equal_approx(nearest.hp, 9979.0) and farther.hp == 10000.0 and offscreen.hp == 10000.0,
+	check(is_equal_approx(nearest.hp, 9990.13) and farther.hp == 10000.0 and offscreen.hp == 10000.0,
 		"one strike hits only nearest on-screen enemy over 600px away; off-screen enemy is excluded")
-	check(is_equal_approx(game.damage_breakdown[0].get("lightning_tower", 0.0), 21.0) and game.damage_totals[1] == 0.0,
+	check(is_equal_approx(game.damage_breakdown[0].get("lightning_tower", 0.0), 9.87) and game.damage_totals[1] == 0.0,
 		"tower inherits global damage Buff and credits its owner / damage category")
 	p1.position += Vector2(95, -50)
 	step(1.89)
@@ -97,7 +97,7 @@ func run() -> void:
 	var hp_before: float = farther.hp
 	first.shot_timer = 0.0
 	first.advance(0.0)
-	check(farther.hp == hp_before - 21.0, "tower reacquires nearest living on-screen enemy after its target dies")
+	check(is_equal_approx(farther.hp, hp_before - 9.87), "tower reacquires nearest living on-screen enemy after its target dies")
 	nearest.dead = false
 	var frozen_life: float = first.life
 	var frozen_charge: float = p1.tower_recharge

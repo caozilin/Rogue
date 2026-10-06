@@ -77,6 +77,8 @@ var frost_cone_tick := 0.0
 var frost_path_tick := 0.0
 var frost_path_position := Vector2.ZERO
 var frost_shield_hp := 0.0
+var frost_shield_max := 0.0
+var frost_ward_remaining := 0.0
 var cold_ward_protection := false
 var possession_cooldown := 0.0
 var possession_remaining := 0.0
@@ -130,6 +132,8 @@ func configure_class(selected_role: int) -> void:
 	frost_cone_tick = 0.0
 	frost_path_tick = 0.0
 	frost_shield_hp = 0.0
+	frost_shield_max = 0.0
+	frost_ward_remaining = 0.0
 	cold_ward_protection = false
 	possession_cooldown = 0.0
 	hp = float(stats.max_hp)
@@ -262,7 +266,8 @@ func advance(delta: float, movement: Vector2) -> void:
 	rescue_cooldown = maxf(0.0, rescue_cooldown - delta)
 	warcry_remaining = maxf(0.0, warcry_remaining - delta)
 	warcry_cooldown = maxf(0.0, warcry_cooldown - delta)
-	giant_cooldown = maxf(0.0, giant_cooldown - delta)
+	# Only time after Giant ends advances its cooldown, including crossing frames.
+	giant_cooldown = maxf(0.0, giant_cooldown - maxf(0.0, delta - giant_remaining))
 	for enemy_id in giant_contact_cooldowns.keys():
 		giant_contact_cooldowns[enemy_id] -= delta
 		if giant_contact_cooldowns[enemy_id] <= 0.0:
@@ -319,7 +324,7 @@ func advance(delta: float, movement: Vector2) -> void:
 	queue_redraw()
 
 func tenacity() -> float:
-	return 0.5 if cold_ward_protection or blessing_remaining > 0.0 else 0.0
+	return 0.5 if blessing_remaining > 0.0 else 0.0
 
 func knock_back(direction: Vector2, distance: float) -> void:
 	if not is_targetable() or is_carried():
@@ -338,7 +343,7 @@ func take_damage(amount: float, source_id := 0) -> void:
 	# Notify before shield absorption or any mitigation; raw damage is preserved.
 	damage_received.emit(amount, source_id)
 	var reduction := Classes.GIANT_DAMAGE_REDUCTION if giant_remaining > 0.0 else 0.0
-	var received := amount * (1.0 - reduction) * (0.75 if cold_ward_protection else 1.0)
+	var received := amount * (1.0 - reduction)
 	var absorbed := minf(blessing_shield, received)
 	blessing_shield -= absorbed
 	received -= absorbed
@@ -353,6 +358,8 @@ func take_damage(amount: float, source_id := 0) -> void:
 		end_carry()
 		frost_remaining = 0.0
 		frost_shield_hp = 0.0
+		frost_shield_max = 0.0
+		frost_ward_remaining = 0.0
 		cold_ward_protection = false
 		suppression_remaining = 0.0
 		warcry_remaining = 0.0

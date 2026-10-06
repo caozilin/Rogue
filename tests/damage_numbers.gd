@@ -57,6 +57,73 @@ func run() -> void:
 		await process_frame
 		await RenderingServer.frame_post_draw
 		print("SCREENSHOT boss_damage_numbers.png result=", root.get_texture().get_image().save_png("res://artifacts/boss_damage_numbers.png"))
+		game.damage_events.clear()
+		game.mage_system.elements.damage(bosses[0], 90.0, 0, "ice", true, "frost")
+		game.mage_system.elements.damage(bosses[1], 140.0, 0, "fire", true, "fireball")
+		game._damage_enemy(bosses[2], 230.0, 0, true, "tower_judgment")
+		game.mage_system.elements.attach(bosses[3], "ice")
+		game.mage_system.elements.damage(bosses[3], 400.0, 0, "fire", true, "fire_explosion")
+		for item in game.damage_events: item.life -= 0.08
+		game.damage_numbers.queue_redraw()
+		await process_frame
+		await process_frame
+		await RenderingServer.frame_post_draw
+		check(root.get_texture().get_image().save_png("res://artifacts/element_damage_numbers.png") == OK,
+			"capture colored ice/fire/lightning and Chinese x2 reaction pop")
+	# Use live elemental entry points, not the generic highlighted flag, to identify reactions.
+	var probe = game.Enemy.new()
+	probe.setup(Vector2(650, 400), game.Balance.difficulty(0), false)
+	probe.hp = 1000000.0
+	game.world.add_child(probe)
+	game.enemies.append(probe)
+	var colors_ok := true
+	for source in ["fireball", "fire_explosion", "fire_ground", "burn", "frost", "frost_cones", "lightning_tower", "tower_chain", "tower_tide", "tower_judgment"]:
+		game._damage_enemy(probe, 10.0, 0, true, source)
+		var expected := "fire" if source in ["fireball", "fire_explosion", "fire_ground", "burn"] else ("ice" if source in ["frost", "frost_cones"] else "lightning")
+		colors_ok = colors_ok and game.damage_events.back().element == expected and not game.damage_events.back().reaction
+	check(colors_ok and game.DamageNumbers.color_for("fire") != game.DamageNumbers.color_for("ice")
+		and game.DamageNumbers.color_for("lightning") != game.DamageNumbers.color_for("ice"), "all three damage families retain distinct element colors even on highlighted hits")
+	probe.element_state.clear()
+	game.mage_system.elements.attach(probe, "ice")
+	game.warrior_system._damage(probe, 10.0, 1, "dash")
+	check(game.damage_events.back().element == "physical" and not game.damage_events.back().reaction,
+		"pure physical warrior dash does not react with ice attachment")
+	game.damage_events.clear()
+	probe.element_state.clear()
+	game.mage_system.elements.attach(probe, "ice")
+	var before: float = probe.hp
+	game.mage_system.elements.damage(probe, 100.0, 0, "fire", true, "fireball")
+	var fire_reaction: Dictionary = game.damage_events.back()
+	check(is_equal_approx(before - probe.hp, 200.0) and fire_reaction.amount == 200
+		and fire_reaction.element == "fire" and fire_reaction.reaction and fire_reaction.reaction_label
+		and fire_reaction.font_size > font_size.call(200.0, true), "real fire-on-ice double damage gets enlarged reaction text and caption")
+	probe.element_state.ice = 0.0
+	game.mage_system.elements.damage(probe, 100.0, 0, "fire", true, "fire_ground")
+	check(game.damage_events.back().reaction and not game.damage_events.back().reaction_label
+		and game.damage_events.back().font_size == fire_reaction.font_size, "ongoing x2 window emphasizes every hit while throttling repeated captions on the same target")
+	for item in game.damage_events: item.life -= 0.4
+	game.mage_system.elements.damage(probe, 100.0, 0, "fire", true, "burn")
+	check(game.damage_events.back().reaction_label, "Chinese reaction caption returns after 0.35 simulation seconds")
+	probe.element_state.fire_amp = 0.0
+	game.mage_system.elements.damage(probe, 100.0, 0, "fire", true, "fireball")
+	check(not game.damage_events.back().reaction and game.damage_events.back().amount == 100, "expired reaction window produces normal elemental damage and size")
+	probe.element_state.clear()
+	game.damage_events.clear()
+	game.mage_system.elements.attach(probe, "fire")
+	game.mage_system.elements.damage(probe, 100.0, 0, "ice", true, "frost")
+	check(game.damage_events.back().element == "ice" and game.damage_events.back().reaction
+		and game.damage_events.back().reaction_label and game.damage_events.back().amount == 200, "ice-on-fire also labels actual x2 reaction in ice color")
+	probe.element_state.clear()
+	game.players[0].skill_stats.frost_power = 2.0
+	game.mage_system.elements.damage(probe, 100.0, 0, "ice", true, "frost_cones")
+	check(game.damage_events.back().amount == 200 and not game.damage_events.back().reaction,
+		"x2 personal ice power without a reaction does not falsely show a reaction label")
+	game.players[0].skill_stats.frost_power = 1.0
+	game._damage_enemy(probe, 100.0, 0, true)
+	check(game.damage_events.back().critical and game.damage_events.back().element == "physical"
+		and not game.damage_events.back().reaction, "physical crit/highlight remains separate from elemental reaction")
+	check(font_size.call(100000.0, true, true) <= 56 and font_size.call(1.0, false, true) >= 26,
+		"reaction text has a clearly larger minimum and a bounded maximum")
 	clear_enemies()
 	game.mini_boss = null
 	game.final_battle = true

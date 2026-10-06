@@ -1,5 +1,5 @@
 extends Node2D
-## Distinct major cues: spectral recast, flame ribbons, crescent wave, cannon streaks,
+## Distinct major cues: spectral recast, silver blade scars, crescent wave, cannon streaks,
 ## golden winged shelter and expanding quake/crack rings. No wall-clock animation.
 const Art = preload("res://scripts/art.gd")
 var system
@@ -21,36 +21,61 @@ func _burst(at: Vector2, radius: float, progress: float, color: Color, spokes :=
 func _draw() -> void:
 	if system == null: return
 	var time: float = system.game.elapsed
+	for trail in system.blade_trails:
+		var fade := minf(1.0, float(trail.life) / 0.16)
+		var points: PackedVector2Array = trail.points
+		var radius: float = trail.radius
+		var owner_color: Color = system.game.Balance.PLAYER_COLORS[int(trail.owner)]
+		draw_polyline(points, Color(0.75, 0.82, 0.93, fade * 0.08), radius * 2.0, true)
+		draw_polyline(points, Color(0.94, 0.97, 1.0, fade * 0.35), 3, true)
+		for segment in range(1, points.size()):
+			var start := points[segment - 1]
+			var end := points[segment]
+			var direction := start.direction_to(end)
+			var side := direction.orthogonal()
+			for sign_side in [-1.0, 1.0]:
+				draw_line(start + side * radius * sign_side, end + side * radius * sign_side, Color(owner_color, fade * 0.3), 1, true)
+			var pieces := maxi(1, ceili(start.distance_to(end) / 35.0))
+			for index in range(pieces):
+				var phase := fposmod(time * 5.0 + (segment + index) * 0.43 + trail.owner * 0.3, 1.0)
+				var at := start.lerp(end, (index + 0.5) / pieces) + side * sin(time * 33.0 + index * 2.1) * radius * 0.18
+				var arc := PackedVector2Array()
+				for step in range(9):
+					var u := float(step) / 4.0 - 1.0
+					arc.append(at + side * u * radius * 0.8 + direction * radius * 0.28 * (1.0 - u * u))
+				draw_polyline(arc, Color(0.75, 0.86, 1.0, fade * (1.0 - phase) * 0.25), 9, true)
+				draw_polyline(arc, Color(0.95, 0.98, 1.0, fade * (1.0 - phase)), 2, true)
+				draw_line(at - direction * 16, at + direction * 16, Color(1, 1, 1, fade * (1.0 - phase) * 0.7), 1.3, true)
 	for item in system.effects:
 		var progress := 1.0 - float(item.life) / float(item.duration)
 		var fade := 1.0 - progress
 		match str(item.kind):
-			"dash", "flame":
+			"blade_finish":
+				var points: PackedVector2Array = item.points
+				var radius: float = item.radius
+				draw_polyline(points, Color(0.93, 0.97, 1.0, fade * 0.22), radius * 2.4, true)
+				draw_polyline(points, Color(1.0, 0.97, 0.85, fade), 7, true)
+				for index in range(1, points.size()):
+					var start := points[index - 1]
+					var end := points[index]
+					var direction := start.direction_to(end)
+					var side := direction.orthogonal()
+					var center := (start + end) * 0.5
+					var span := radius * (0.5 + progress * 0.7)
+					for sign_side in [-1.0, 1.0]:
+						draw_line(center - side * span - direction * span * sign_side, center + side * span + direction * span * sign_side, Color(1.0, 0.98, 0.90, fade), 4, true)
+					_glow(center, radius * 1.3, Color("eef5ff"), fade * 0.3)
+				var center := points[points.size() / 2]
+				draw_string_outline(ThemeDB.fallback_font, center + Vector2(-25, -radius - 58), "处决", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, 4, Color(0.06, 0.08, 0.1, fade))
+				draw_string(ThemeDB.fallback_font, center + Vector2(-25, -radius - 58), "处决", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color(1.0, 0.94, 0.73, fade))
+			"dash":
 				var start: Vector2 = item.start
 				var end: Vector2 = item.end
 				var direction := start.direction_to(end)
-				var fire: bool = item.kind == "flame"
-				var color := Color("ff8437") if fire else (Color("b7edff") if bool(item.second) else Color("d2d8e8"))
+				var color := Color("b7edff") if bool(item.second) else Color("d2d8e8")
 				var radius: float = item.radius
-				draw_line(start, end, Color(color, fade * (0.18 if fire else 0.08)), radius * 2.0, true)
+				draw_line(start, end, Color(color, fade * 0.08), radius * 2.0, true)
 				draw_line(start, end, Color(color, fade * 0.7), 5.0, true)
-				if fire:
-					for index in range(20):
-						var phase := fposmod(index * 0.618 + time * 0.75, 1.0)
-						var at := start.lerp(end, fposmod(index * 0.373, 1.0)) + direction.orthogonal() * sin(index * 2.7) * radius * 0.6
-						at += Vector2(sin(time * 6.0 + index) * 7.0, -phase * 45.0)
-						var alpha := fade * sin(phase * PI)
-						_glow(at, 22.0, color, alpha * 0.3)
-						var spark := PackedVector2Array([at, at + Vector2(sin(index) * 4.0, -8), at + Vector2(sin(time * 8 + index) * 6.0, -15)])
-						draw_polyline(spark, Color(1.0, 0.45, 0.12, alpha * 0.6), 5.0, true)
-						draw_polyline(spark, Color(1.0, 0.86, 0.5, alpha), 1.5, true)
-					for side in [-1.0, 1.0]:
-						var ribbon := PackedVector2Array()
-						for index in range(22):
-							var u := float(index) / 21.0
-							ribbon.append(start.lerp(end, u) + direction.orthogonal() * side * radius * (0.42 + sin(u * TAU * 2.0 + time * 9.0) * 0.1))
-						draw_polyline(ribbon, Color(1.0, 0.35, 0.06, fade * 0.22), 12.0, true)
-						draw_polyline(ribbon, Color(1.0, 0.78, 0.35, fade * 0.8), 2.0, true)
 			"recast":
 				var color := Color("dbb8ff") if bool(item.second) else Color("75dfff")
 				_burst(item.position, float(item.radius), progress, color, 8)
@@ -126,8 +151,7 @@ func _draw() -> void:
 		var direction: Vector2 = slash.direction
 		var side := direction.orthogonal()
 		var radius: float = slash.radius
-		var fire: bool = slash.fire
-		var color := Color("ffb252") if fire else Color("ccefff")
+		var color := Color("ccefff")
 		_glow(at, radius * 1.4, color, 0.35)
 		var arc := PackedVector2Array()
 		for index in range(25):

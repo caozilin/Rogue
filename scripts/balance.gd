@@ -33,6 +33,11 @@ const RANGED_BASE_SPEED := MELEE_BASE_SPEED * 0.8
 const UPGRADE_LIMITS := {"interval": 0.10, "projectiles": 4, "range": 1200.0,
 	"pierce": 3, "crit": 0.0, "speed": MELEE_BASE_SPEED * 2.5, "regen": 0.05}
 const PLAYER_COLORS := [Color("54d9ee"), Color("ffbb66")]
+const RUN_DIFFICULTIES := [
+	{"name": "简单", "damage": 1.0, "health": 1.0, "starting_majors": 0},
+	{"name": "困难", "damage": 1.5, "health": 1.25, "starting_majors": 1},
+	{"name": "极限", "damage": 2.0, "health": 1.5, "starting_majors": 2}
+]
 
 static func starting_stats() -> Dictionary:
 	return {"max_hp": 100.0, "speed": RANGED_BASE_SPEED, "damage": 14.0,

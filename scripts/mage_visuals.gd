@@ -64,7 +64,8 @@ func refresh() -> void:
 		fields[index].material.set_shader_parameter("strength", minf(1.0, player.frost_remaining * 3.0))
 		fields[index].material.set_shader_parameter("effect_age", system.FROST_DURATION - player.frost_remaining)
 		fields[index].material.set_shader_parameter("pulse_interval", system.FROST_TICK / float(player.skill_stats.frost_rate))
-		fields[index].material.set_shader_parameter("ward", 1.0 if player.frost_shield_hp > 0.0 else 0.0)
+		# The independent fixed-size shell renders protection, not the enlarged field.
+		fields[index].material.set_shader_parameter("ward", 0.0)
 	queue_redraw()
 
 func _draw() -> void:

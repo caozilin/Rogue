@@ -1,6 +1,7 @@
 extends Node2D
 ## One simulation owns salvos, terrain, attachments, wards and all effect lifetimes.
 const Classes = preload("res://scripts/classes.gd")
+const Balance = preload("res://scripts/balance.gd")
 const Visuals = preload("res://scripts/mage_visuals.gd")
 const WardVisual = preload("res://scripts/frost_ward_visual.gd")
 const Elements = preload("res://scripts/elements.gd")
@@ -20,6 +21,8 @@ const GROWTH_STAGES := 4
 const FROST_COOLDOWN := 15.0
 const FROST_DURATION := 5.0
 const FROST_RADIUS := 155.0
+const WARD_RADIUS := Balance.PLAYER_RADIUS * 2.0 * 1.5 # 1.5 normal collision-body widths: 48 px.
+const WARD_DURATION := 10.0
 const MAX_TOWERS := 8
 const FROST_TICK := 0.5
 const FROST_DAMAGE := 0.35
@@ -75,8 +78,10 @@ func highest_enemy(player):
 	return target
 
 func frost_radius(player) -> float:
-	# The ward adds defense to the same field; it must retain all range bonuses.
 	return FROST_RADIUS * float(player.skill_stats.frost_width) * player.skill_range_multiplier()
+
+func ward_radius() -> float:
+	return WARD_RADIUS
 
 func activate_tower(id: int) -> bool:
 	if game.simulation_speed() == 0.0 or id < 0 or id >= game.players.size():
@@ -89,7 +94,7 @@ func activate_tower(id: int) -> bool:
 	tower.effects = lightning_effects
 	tower.owner_id = id
 	tower.position = player.position
-	tower.damage = player.output_damage() * float(player.skill_stats.tower_damage)
+	tower.damage = player.output_damage() * Classes.TOWER_BASE_DAMAGE * float(player.skill_stats.tower_damage)
 	tower.attack_interval = Tower.ATTACK_INTERVAL / float(player.skill_stats.tower_rate)
 	tower.total_duration = float(player.skill_stats.tower_duration)
 	tower.life = tower.total_duration
@@ -123,8 +128,10 @@ func _spawn_fireball(player) -> bool:
 	if direction == Vector2.ZERO:
 		direction = player.facing
 	var radius: float = FIREBALL_RADIUS * float(player.skill_stats.fire_width) * player.skill_range_multiplier()
+	# Snapshot Q's strengthened base once: body, ground, burn and growth explosion inherit it.
+	var fire_base: float = player.output_damage() * float(player.skill_stats.fire_power)
 	fireballs.append({"position": origin + direction * 30.0, "direction": direction, "owner": player.player_id,
-		"damage": player.output_damage() * FIREBALL_DAMAGE, "base_damage": player.output_damage(),
+		"damage": fire_base * FIREBALL_DAMAGE, "base_damage": fire_base,
 		"radius": radius, "base_radius": radius, "life": FIREBALL_LIFE * player.skill_range_multiplier(),
 		"timers": {}, "pushed": {}, "hit_ids": {}, "energy": 0.0, "stage": 0,
 		"push": UPGRADED_PUSH if bool(player.skill_stats.fire_push) else FIREBALL_PUSH,
@@ -153,17 +160,23 @@ func activate(id: int, slot: int) -> bool:
 		player.frost_cone_tick = 0.0
 		player.frost_path_tick = 0.0
 		player.frost_path_position = player.position
-		player.frost_shield_hp = float(player.stats.max_hp) * 1.5 if bool(player.skill_stats.frost_ward) else 0.0
+		player.frost_shield_max = float(player.stats.max_hp) if bool(player.skill_stats.frost_ward) else 0.0
+		player.frost_shield_hp = player.frost_shield_max
+		player.frost_ward_remaining = WARD_DURATION if bool(player.skill_stats.frost_ward) else 0.0
 		player.frost_cooldown = FROST_COOLDOWN
 		refresh_wards()
 	elif slot == 3:
 		var ally = game.players[1 - id]
-		if player.possession_cooldown > 0.0 or player.is_possessed() or player.possessed_by != null or player.is_carried() or player.carrying != null:
+		var switching_from_rescue: bool = player.is_carried() and player.carried_by == ally and ally.carrying == player
+		if player.possession_cooldown > 0.0 or player.is_possessed() or player.possessed_by != null or (player.is_carried() and not switching_from_rescue) or player.carrying != null:
 			return false
-		if not ally.is_active() or ally.is_possessed() or ally.is_carried() or ally.carrying != null or ally.possessed_by != null:
+		if not ally.is_active() or ally.is_possessed() or ally.is_carried() or (ally.carrying != null and not switching_from_rescue) or ally.possessed_by != null:
 			return false
 		if player.position.distance_to(ally.position) > POSSESSION_RANGE:
 			return false
+		# Transfer the existing rescue link only after the cast has passed all checks.
+		if switching_from_rescue:
+			player.end_carry()
 		player.possession_host = ally
 		ally.possessed_by = player
 		player.possession_remaining = POSSESSION_DURATION
@@ -196,9 +209,9 @@ func refresh_wards() -> void:
 	for ally in game.players:
 		ally.cold_ward_protection = false
 	for player in game.players:
-		if not player.is_active() or player.frost_remaining <= 0.0 or player.frost_shield_hp <= 0.0:
+		if not player.is_active() or player.frost_ward_remaining <= 0.0 or player.frost_shield_hp <= 0.0:
 			continue
-		var radius := frost_radius(player)
+		var radius := ward_radius()
 		for ally in game.players:
 			if ally.is_active() and ally.position.distance_squared_to(player.position) <= radius * radius:
 				ally.cold_ward_protection = true
@@ -209,10 +222,10 @@ func intercept_bullet(start: Vector2, end: Vector2, bullet) -> bool:
 	var step := end - start
 	var length_squared := step.length_squared()
 	for player in game.players:
-		if not player.is_active() or player.frost_remaining <= 0.0 or player.frost_shield_hp <= 0.0:
+		if not player.is_active() or player.frost_ward_remaining <= 0.0 or player.frost_shield_hp <= 0.0:
 			continue
 		var offset: Vector2 = start - player.position
-		var radius: float = frost_radius(player) + bullet.radius
+		var radius: float = ward_radius() + bullet.radius
 		var t := INF
 		var c := offset.length_squared() - radius * radius
 		if c <= 0.0:
@@ -231,11 +244,11 @@ func intercept_bullet(start: Vector2, end: Vector2, bullet) -> bool:
 	if ward_impacts.size() >= 24:
 		ward_impacts.pop_front()
 	ward_impacts.append({"owner": shield.player_id, "center": shield.position,
-		"radius": frost_radius(shield),
+		"radius": ward_radius(),
 		"angle": (start + step * best - shield.position).angle(), "life": 0.45,
 		"broken": shield.frost_shield_hp <= 0.0})
 	if shield.frost_shield_hp <= 0.0:
-		shield.frost_remaining = 0.0
+		shield.frost_ward_remaining = 0.0
 		refresh_wards()
 	visuals.refresh()
 	ward_visuals.refresh()
@@ -380,6 +393,10 @@ func _advance_cones(delta: float) -> void:
 	cones = cones.filter(func(cone): return cone.life > 0.0)
 
 func advance(delta: float) -> void:
+	for player in game.players:
+		player.frost_ward_remaining = maxf(0.0, player.frost_ward_remaining - delta)
+		if player.frost_ward_remaining <= 0.0 or not player.is_active():
+			player.frost_shield_hp = 0.0
 	lightning_effects.advance(delta)
 	for tower in towers:
 		tower.advance(delta)
